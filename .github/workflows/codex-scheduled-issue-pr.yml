@@ -21,6 +21,11 @@ permissions:
 jobs:
   codex:
     runs-on: ubuntu-latest
+    env:
+      CODEX_TMP_DIR: ${{ runner.temp }}/codex
+      CODEX_ISSUE_JSON: ${{ runner.temp }}/codex/issue.json
+      CODEX_PROMPT_FILE: ${{ runner.temp }}/codex/codex-prompt.md
+      CODEX_OUTPUT_FILE: ${{ runner.temp }}/codex/codex-output.md
     steps:
       - name: Guard (run only at 08:00/20:00 PT)
         id: guard
@@ -166,7 +171,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh issue view "${{ steps.pick.outputs.issue_number }}" --repo "${{ github.repository }}" --json title,body,url > issue.json
+          mkdir -p "$CODEX_TMP_DIR"
+          gh issue view "${{ steps.pick.outputs.issue_number }}" --repo "${{ github.repository }}" --json title,body,url > "$CODEX_ISSUE_JSON"
 
       - name: Build Codex prompt
         if: steps.pick.outputs.issue_number != ''
@@ -180,7 +186,9 @@ jobs:
           from pathlib import Path
 
           repo = os.environ["GITHUB_REPOSITORY"]
-          issue = json.loads(Path("issue.json").read_text(encoding="utf-8"))
+          issue_json = os.environ["CODEX_ISSUE_JSON"]
+          prompt_file = os.environ["CODEX_PROMPT_FILE"]
+          issue = json.loads(Path(issue_json).read_text(encoding="utf-8"))
           number = os.environ.get("ISSUE_NUMBER") or ""
           title = issue["title"]
           url = issue["url"]
@@ -210,7 +218,7 @@ jobs:
               "  - Any limitations / follow-ups",
               "",
           ]
-          Path("codex-prompt.md").write_text("\n".join(prompt_parts), encoding="utf-8")
+          Path(prompt_file).write_text("\n".join(prompt_parts), encoding="utf-8")
           PY
         env:
           ISSUE_NUMBER: ${{ steps.pick.outputs.issue_number }}
@@ -221,8 +229,8 @@ jobs:
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: codex-prompt.md
-          output-file: codex-output.md
+          prompt-file: ${{ env.CODEX_PROMPT_FILE }}
+          output-file: ${{ env.CODEX_OUTPUT_FILE }}
           safety-strategy: drop-sudo
           sandbox: workspace-write
           codex-args: '["--config","approval_policy=\"never\"","--config","sandbox_workspace_write.network_access=true"]'
@@ -234,7 +242,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          if git diff --quiet && git diff --cached --quiet; then
+          if [[ -z "$(git status --porcelain)" ]]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -279,8 +287,8 @@ jobs:
             echo "<details>"
             echo "<summary>Codex summary</summary>"
             echo
-            if [[ -f "codex-output.md" ]]; then
-              cat "codex-output.md"
+            if [[ -f "$CODEX_OUTPUT_FILE" ]]; then
+              cat "$CODEX_OUTPUT_FILE"
             else
               echo "(No codex output captured.)"
             fi
