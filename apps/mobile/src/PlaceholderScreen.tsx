@@ -1,5 +1,6 @@
 import type { PropsWithChildren } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { ScreenHeader } from "./components/ScreenHeader";
 
 interface PlaceholderScreenProps {
   title: string;
@@ -12,33 +13,24 @@ export default function PlaceholderScreen({
   children,
 }: PropsWithChildren<PlaceholderScreenProps>) {
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{title}</Text>
-      {description ? <Text style={styles.description}>{description}</Text> : null}
-      <View style={styles.content}>{children}</View>
+    <View className="flex-1 bg-void">
+      <ScreenHeader title={title} subtitle="Force Collector" />
+      <ScrollView className="flex-1" contentContainerStyle={styles.content}>
+        {description ? (
+          <Text className="mb-6 text-sm font-space-medium text-secondary-text">
+            {description}
+          </Text>
+        ) : null}
+        <View className="gap-4">{children}</View>
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 32,
-    backgroundColor: "#0b0f16",
-  },
-  title: {
-    color: "#e6f0ff",
-    fontSize: 24,
-    fontWeight: "700",
-  },
-  description: {
-    color: "#91a4c7",
-    marginTop: 8,
-    fontSize: 14,
-    lineHeight: 20,
-  },
   content: {
-    marginTop: 24,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 32,
   },
 });

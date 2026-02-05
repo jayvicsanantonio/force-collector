@@ -1,0 +1,41 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ["./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        "electric-cyan": "#06b6d4",
+        "laser-cyan": "#00e5ff",
+        "bright-cyan": "#22d3ee",
+        "royal-blue": "#2563eb",
+        "action-blue": "#3b82f6",
+        "deep-blue": "#1d4ed8",
+        "scan-blue": "#2979ff",
+        void: "#020617",
+        "hud-surface": "#0f172a",
+        "raised-surface": "#1e293b",
+        "scanner-ink": "#060b14",
+        "camera-deep": "#050a14",
+        "true-black": "#050505",
+        "overlay-ink": "#02040a",
+        "profile-panel": "#1a2234",
+        "profile-nav": "#151b2b",
+        "frost-text": "#f8fafc",
+        "muted-text": "#64748b",
+        "secondary-text": "#94a3b8",
+        "nav-tint": "#bae6fd",
+        "hud-line": "#1e3a8a",
+        "saber-blue": "#2e86c1",
+        "saber-red": "#c0392b",
+        "danger-red": "#dc2626",
+      },
+      fontFamily: {
+        space: ["SpaceGrotesk_400Regular", "System"],
+        "space-medium": ["SpaceGrotesk_500Medium", "System"],
+        "space-semibold": ["SpaceGrotesk_600SemiBold", "System"],
+        "space-bold": ["SpaceGrotesk_700Bold", "System"],
+      },
+    },
+  },
+  plugins: [],
+};
