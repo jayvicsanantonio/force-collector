@@ -254,7 +254,9 @@ jobs:
         if: steps.commit.outputs.changed == 'true'
         id: pr
         env:
-          GH_TOKEN: ${{ github.token }}
+          # If repo setting "Allow GitHub Actions to create and approve pull requests" is disabled,
+          # the default GITHUB_TOKEN cannot create PRs. Provide a PAT via GH_PAT to allow PR creation.
+          GH_TOKEN: ${{ secrets.GH_PAT || github.token }}
         shell: bash
         run: |
           set -euo pipefail
