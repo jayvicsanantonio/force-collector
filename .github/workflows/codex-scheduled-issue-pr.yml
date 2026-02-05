@@ -4,9 +4,9 @@ on:
   schedule:
     # GitHub cron is UTC only.
     # We schedule both PST and PDT candidate times, then gate at runtime using America/Los_Angeles:
-    # - 10:00 PT == 18:00 UTC (PST) / 17:00 UTC (PDT)
-    # - 22:00 PT == 06:00 UTC (PST) / 05:00 UTC (PDT)
-    - cron: '0 5,6,17,18 * * *'
+    # - 07:00 PT == 15:00 UTC (PST) / 14:00 UTC (PDT)
+    # - 19:00 PT == 03:00 UTC (PST) / 02:00 UTC (PDT)
+    - cron: '0 2,3,14,15 * * *'
   workflow_dispatch: {}
 
 concurrency:
@@ -22,7 +22,7 @@ jobs:
   codex:
     runs-on: ubuntu-latest
     steps:
-      - name: Guard (run only at 10:00/22:00 PT)
+      - name: Guard (run only at 07:00/19:00 PT)
         id: guard
         shell: bash
         run: |
@@ -33,7 +33,7 @@ jobs:
             exit 0
           fi
           local_hour="$(TZ=America/Los_Angeles date +%H)"
-          if [[ "$local_hour" != "10" && "$local_hour" != "22" ]]; then
+          if [[ "$local_hour" != "07" && "$local_hour" != "19" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "Skipping: local hour is $local_hour (America/Los_Angeles)."
             exit 0
