@@ -21,11 +21,6 @@ permissions:
 jobs:
   codex:
     runs-on: ubuntu-latest
-    env:
-      CODEX_TMP_DIR: ${{ runner.temp }}/codex
-      CODEX_ISSUE_JSON: ${{ runner.temp }}/codex/issue.json
-      CODEX_PROMPT_FILE: ${{ runner.temp }}/codex/codex-prompt.md
-      CODEX_OUTPUT_FILE: ${{ runner.temp }}/codex/codex-output.md
     steps:
       - name: Guard (run only at 08:00/20:00 PT)
         id: guard
@@ -50,6 +45,19 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Prepare temp paths
+        if: steps.guard.outputs.skip != 'true'
+        id: paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp_dir="${RUNNER_TEMP}/codex"
+          mkdir -p "$tmp_dir"
+          echo "tmp_dir=$tmp_dir" >> "$GITHUB_OUTPUT"
+          echo "issue_json=$tmp_dir/issue.json" >> "$GITHUB_OUTPUT"
+          echo "prompt_file=$tmp_dir/codex-prompt.md" >> "$GITHUB_OUTPUT"
+          echo "output_file=$tmp_dir/codex-output.md" >> "$GITHUB_OUTPUT"
 
       - name: Ensure labels exist
         if: steps.guard.outputs.skip != 'true'
@@ -171,8 +179,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$CODEX_TMP_DIR"
-          gh issue view "${{ steps.pick.outputs.issue_number }}" --repo "${{ github.repository }}" --json title,body,url > "$CODEX_ISSUE_JSON"
+          gh issue view "${{ steps.pick.outputs.issue_number }}" --repo "${{ github.repository }}" --json title,body,url > "${{ steps.paths.outputs.issue_json }}"
 
       - name: Build Codex prompt
         if: steps.pick.outputs.issue_number != ''
@@ -222,6 +229,8 @@ jobs:
           PY
         env:
           ISSUE_NUMBER: ${{ steps.pick.outputs.issue_number }}
+          CODEX_ISSUE_JSON: ${{ steps.paths.outputs.issue_json }}
+          CODEX_PROMPT_FILE: ${{ steps.paths.outputs.prompt_file }}
 
       - name: Run Codex
         if: steps.pick.outputs.issue_number != ''
@@ -229,8 +238,8 @@ jobs:
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
-          prompt-file: ${{ env.CODEX_PROMPT_FILE }}
-          output-file: ${{ env.CODEX_OUTPUT_FILE }}
+          prompt-file: ${{ steps.paths.outputs.prompt_file }}
+          output-file: ${{ steps.paths.outputs.output_file }}
           safety-strategy: drop-sudo
           sandbox: workspace-write
           codex-args: '["--config","approval_policy=\"never\"","--config","sandbox_workspace_write.network_access=true"]'
@@ -271,6 +280,7 @@ jobs:
           repo="${{ github.repository }}"
           base="${{ github.event.repository.default_branch }}"
           head="${{ steps.branch.outputs.branch }}"
+          codex_output="${{ steps.paths.outputs.output_file }}"
           issue_number="${{ steps.pick.outputs.issue_number }}"
           issue_title="${{ steps.pick.outputs.issue_title }}"
           issue_url="${{ steps.pick.outputs.issue_url }}"
@@ -287,8 +297,8 @@ jobs:
             echo "<details>"
             echo "<summary>Codex summary</summary>"
             echo
-            if [[ -f "$CODEX_OUTPUT_FILE" ]]; then
-              cat "$CODEX_OUTPUT_FILE"
+            if [[ -f "$codex_output" ]]; then
+              cat "$codex_output"
             else
               echo "(No codex output captured.)"
             fi
