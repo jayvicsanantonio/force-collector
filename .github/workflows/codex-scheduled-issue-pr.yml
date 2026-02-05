@@ -3,10 +3,15 @@ name: Codex - Scheduled Issue PR
 on:
   schedule:
     # GitHub cron is UTC only.
-    # We schedule both PST and PDT candidate times, then gate at runtime using America/Los_Angeles:
+    # We schedule both PST and PDT candidate times, then gate at runtime using America/Los_Angeles.
+    # IMPORTANT: scheduled runs can be delayed by minutes/hours, so we must NOT gate on "current local hour".
+    # Instead, we gate on the cron string that triggered the run: github.event.schedule.
     # - 07:00 PT == 15:00 UTC (PST) / 14:00 UTC (PDT)
     # - 19:00 PT == 03:00 UTC (PST) / 02:00 UTC (PDT)
-    - cron: '0 2,3,14,15 * * *'
+    - cron: '0 2 * * *'  # 19:00 PDT
+    - cron: '0 3 * * *'  # 19:00 PST
+    - cron: '0 14 * * *' # 07:00 PDT
+    - cron: '0 15 * * *' # 07:00 PST
   workflow_dispatch: {}
 
 concurrency:
@@ -32,10 +37,26 @@ jobs:
             echo "Not a scheduled run; skipping time guard."
             exit 0
           fi
-          local_hour="$(TZ=America/Los_Angeles date +%H)"
-          if [[ "$local_hour" != "07" && "$local_hour" != "19" ]]; then
+
+          schedule="${{ github.event.schedule }}"
+          pt_offset="$(TZ=America/Los_Angeles date +%z)"
+
+          allow="false"
+          if [[ "$pt_offset" == "-0800" ]]; then
+            # PST: 07:00 PT == 15:00 UTC, 19:00 PT == 03:00 UTC
+            if [[ "$schedule" == "0 15 * * *" || "$schedule" == "0 3 * * *" ]]; then
+              allow="true"
+            fi
+          elif [[ "$pt_offset" == "-0700" ]]; then
+            # PDT: 07:00 PT == 14:00 UTC, 19:00 PT == 02:00 UTC
+            if [[ "$schedule" == "0 14 * * *" || "$schedule" == "0 2 * * *" ]]; then
+              allow="true"
+            fi
+          fi
+
+          if [[ "$allow" != "true" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "Skipping: local hour is $local_hour (America/Los_Angeles)."
+            echo "Skipping: schedule=$schedule pt_offset=$pt_offset (America/Los_Angeles)."
             exit 0
           fi
           echo "skip=false" >> "$GITHUB_OUTPUT"
