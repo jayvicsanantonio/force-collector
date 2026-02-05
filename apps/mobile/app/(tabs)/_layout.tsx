@@ -1,14 +1,22 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useTheme } from "../../src/theme/ThemeProvider";
+import { allegianceToAccent, themeColors } from "../../src/theme/theme";
 
 export default function TabsLayout() {
+  const { allegiance } = useTheme();
+  const accentColor = allegianceToAccent(allegiance);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: { backgroundColor: "#0b0f16" },
-        tabBarActiveTintColor: "#5cc8ff",
-        tabBarInactiveTintColor: "#91a4c7",
+        tabBarStyle: {
+          backgroundColor: themeColors.hudSurface,
+          borderTopColor: themeColors.hudLine,
+        },
+        tabBarActiveTintColor: accentColor,
+        tabBarInactiveTintColor: themeColors.secondaryText,
       }}
     >
       <Tabs.Screen
