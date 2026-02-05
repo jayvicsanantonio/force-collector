@@ -1,0 +1,325 @@
+name: Codex - Scheduled Issue PR
+
+on:
+  schedule:
+    # GitHub cron is UTC only.
+    # We schedule both PST and PDT candidate times, then gate at runtime using America/Los_Angeles:
+    # - 08:00 PT == 16:00 UTC (PST) / 15:00 UTC (PDT)
+    # - 20:00 PT == 04:00 UTC (PST) / 03:00 UTC (PDT)
+    - cron: '0 3,4,15,16 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: codex-scheduled-issue-pr
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  codex:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard (run only at 08:00/20:00 PT)
+        id: guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          local_hour="$(TZ=America/Los_Angeles date +%H)"
+          if [[ "$local_hour" != "08" && "$local_hour" != "20" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping: local hour is $local_hour (America/Los_Angeles)."
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        if: steps.guard.outputs.skip != 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure labels exist
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          gh label create "codex" --repo "$repo" --color "5319e7" --description "Codex-generated work" --force || true
+          gh label create "codex-in-progress" --repo "$repo" --color "0E8A16" --description "Codex is currently working this issue" --force || true
+          gh label create "codex-pr-open" --repo "$repo" --color "1D76DB" --description "A Codex PR has been opened for this issue" --force || true
+          gh label create "codex-failed" --repo "$repo" --color "D73A4A" --description "Codex attempted but failed; needs manual triage" --force || true
+          gh label create "codex-noop" --repo "$repo" --color "BFDADC" --description "Codex ran but made no changes" --force || true
+
+      - name: Pick next unaddressed issue (lowest number)
+        if: steps.guard.outputs.skip != 'true'
+        id: pick
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          owner = os.environ["GITHUB_REPOSITORY_OWNER"]
+          out_path = os.environ["GITHUB_OUTPUT"]
+
+          skip_labels = {"codex-in-progress", "codex-pr-open", "codex-failed", "codex-noop"}
+
+          cmd = [
+              "gh",
+              "issue",
+              "list",
+              "--repo",
+              repo,
+              "--assignee",
+              owner,
+              "--state",
+              "open",
+              "--limit",
+              "200",
+              "--json",
+              "number,title,url,labels",
+          ]
+          raw = subprocess.check_output(cmd, text=True)
+          issues = json.loads(raw)
+
+          candidates = []
+          for issue in issues:
+              labels = {lbl["name"] for lbl in (issue.get("labels") or [])}
+              if labels & skip_labels:
+                  continue
+              candidates.append(issue)
+
+          if not candidates:
+              with open(out_path, "a", encoding="utf-8") as f:
+                  f.write("issue_number=\n")
+              print("No eligible open issues assigned to the repo owner.")
+              raise SystemExit(0)
+
+          issue = sorted(candidates, key=lambda x: x["number"])[0]
+          issue_number = str(issue["number"])
+          issue_title = issue["title"]
+          issue_url = issue["url"]
+
+          def write_output(k: str, v: str) -> None:
+              with open(out_path, "a", encoding="utf-8") as f:
+                  f.write(f"{k}<<__EOF__\n{v}\n__EOF__\n")
+
+          with open(out_path, "a", encoding="utf-8") as f:
+              f.write(f"issue_number={issue_number}\n")
+          write_output("issue_title", issue_title)
+          write_output("issue_url", issue_url)
+          print(f"Picked issue #{issue_number}: {issue_title}")
+          PY
+
+      - name: Mark issue in progress
+        if: steps.pick.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          issue_number="${{ steps.pick.outputs.issue_number }}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          gh issue edit "$issue_number" --repo "$repo" --add-label "codex-in-progress"
+          gh issue comment "$issue_number" --repo "$repo" --body "Codex started work in scheduled run: $run_url"
+
+      - name: Create work branch
+        if: steps.pick.outputs.issue_number != ''
+        id: branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="codex/issue-${{ steps.pick.outputs.issue_number }}-${{ github.run_id }}"
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+
+      - name: Fetch issue details
+        if: steps.pick.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh issue view "${{ steps.pick.outputs.issue_number }}" --repo "${{ github.repository }}" --json title,body,url > issue.json
+
+      - name: Build Codex prompt
+        if: steps.pick.outputs.issue_number != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          repo = os.environ["GITHUB_REPOSITORY"]
+          issue = json.loads(Path("issue.json").read_text(encoding="utf-8"))
+          number = os.environ.get("ISSUE_NUMBER") or ""
+          title = issue["title"]
+          url = issue["url"]
+          body = issue["body"] or ""
+
+          prompt_parts = [
+              f"You are Codex running in GitHub Actions on repository `{repo}`.",
+              "",
+              f"Task: Implement GitHub Issue #{number}: {title}",
+              f"Issue URL: {url}",
+              "",
+              "## Source of truth: issue body",
+              body,
+              "",
+              "## Constraints",
+              f"- Work ONLY on Issue #{number}. Do not address other issues.",
+              "- Follow the issue acceptance criteria exactly; keep changes minimal and scoped.",
+              "- Do not add tests.",
+              "- Do not create a pull request (the workflow will do it).",
+              "- Do not change GitHub Actions workflows unless the issue explicitly requires it.",
+              "",
+              "## Deliverable",
+              "- Make code changes in the repo so the issue can be merged when reviewed.",
+              "- In your final message, include:",
+              "  - What changed",
+              "  - How to test (commands)",
+              "  - Any limitations / follow-ups",
+              "",
+          ]
+          Path("codex-prompt.md").write_text("\n".join(prompt_parts), encoding="utf-8")
+          PY
+        env:
+          ISSUE_NUMBER: ${{ steps.pick.outputs.issue_number }}
+
+      - name: Run Codex
+        if: steps.pick.outputs.issue_number != ''
+        id: codex
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt-file: codex-prompt.md
+          output-file: codex-output.md
+          safety-strategy: drop-sudo
+          sandbox: workspace-write
+          codex-args: '["--ask-for-approval","never","--config","sandbox_workspace_write.network_access=true"]'
+
+      - name: Commit changes (if any)
+        if: steps.pick.outputs.issue_number != ''
+        id: commit
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "codex: issue #${{ steps.pick.outputs.issue_number }}"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push branch
+        if: steps.commit.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push --set-upstream origin "${{ steps.branch.outputs.branch }}"
+
+      - name: Create pull request
+        if: steps.commit.outputs.changed == 'true'
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          base="${{ github.event.repository.default_branch }}"
+          head="${{ steps.branch.outputs.branch }}"
+          issue_number="${{ steps.pick.outputs.issue_number }}"
+          issue_title="${{ steps.pick.outputs.issue_title }}"
+          issue_url="${{ steps.pick.outputs.issue_url }}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          pr_title="Codex: #${issue_number} ${issue_title}"
+
+          {
+            echo "Closes #${issue_number}"
+            echo
+            echo "Issue: ${issue_url}"
+            echo "Run: ${run_url}"
+            echo
+            echo "<details>"
+            echo "<summary>Codex summary</summary>"
+            echo
+            if [[ -f "codex-output.md" ]]; then
+              cat "codex-output.md"
+            else
+              echo "(No codex output captured.)"
+            fi
+            echo
+            echo "</details>"
+          } > pr_body.md
+
+          pr_url="$(gh pr create --repo "$repo" --base "$base" --head "$head" --title "$pr_title" --body-file pr_body.md)"
+          echo "url=$pr_url" >> "$GITHUB_OUTPUT"
+
+          gh pr edit "$pr_url" --repo "$repo" --add-assignee "${{ github.repository_owner }}" || true
+          gh pr edit "$pr_url" --repo "$repo" --add-label "codex" || true
+
+      - name: Mark issue PR opened
+        if: steps.pr.outputs.url != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          issue_number="${{ steps.pick.outputs.issue_number }}"
+          pr_url="${{ steps.pr.outputs.url }}"
+
+          gh issue comment "$issue_number" --repo "$repo" --body "Opened PR: $pr_url"
+          gh issue edit "$issue_number" --repo "$repo" --remove-label "codex-in-progress" --add-label "codex-pr-open"
+
+      - name: Mark issue no-op (Codex made no changes)
+        if: steps.pick.outputs.issue_number != '' && steps.commit.outputs.changed != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          issue_number="${{ steps.pick.outputs.issue_number }}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          gh issue comment "$issue_number" --repo "$repo" --body "Codex finished but produced no changes. Run: $run_url"
+          gh issue edit "$issue_number" --repo "$repo" --remove-label "codex-in-progress" --add-label "codex-noop"
+
+      - name: Mark issue failed (needs triage)
+        if: failure() && steps.pick.outputs.issue_number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          issue_number="${{ steps.pick.outputs.issue_number }}"
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          gh issue comment "$issue_number" --repo "$repo" --body "Codex run failed. Run: $run_url"
+          gh issue edit "$issue_number" --repo "$repo" --remove-label "codex-in-progress" --add-label "codex-failed" || true
