@@ -27,6 +27,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "${{ github.event_name }}" != "schedule" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "Not a scheduled run; skipping time guard."
+            exit 0
+          fi
           local_hour="$(TZ=America/Los_Angeles date +%H)"
           if [[ "$local_hour" != "08" && "$local_hour" != "20" ]]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -54,6 +59,7 @@ jobs:
           gh label create "codex-pr-open" --repo "$repo" --color "1D76DB" --description "A Codex PR has been opened for this issue" --force || true
           gh label create "codex-failed" --repo "$repo" --color "D73A4A" --description "Codex attempted but failed; needs manual triage" --force || true
           gh label create "codex-noop" --repo "$repo" --color "BFDADC" --description "Codex ran but made no changes" --force || true
+          gh label create "codex-skip" --repo "$repo" --color "FFFFFF" --description "Skip this issue for scheduled Codex runs" --force || true
 
       - name: Pick next unaddressed issue (lowest number)
         if: steps.guard.outputs.skip != 'true'
@@ -73,7 +79,11 @@ jobs:
           owner = os.environ["GITHUB_REPOSITORY_OWNER"]
           out_path = os.environ["GITHUB_OUTPUT"]
 
-          skip_labels = {"codex-in-progress", "codex-pr-open", "codex-failed", "codex-noop"}
+          # Eligible issues are open issues assigned to the repo owner, excluding:
+          # - issues already being worked ("codex-in-progress")
+          # - issues that already have a Codex PR ("codex-pr-open")
+          # - issues explicitly skipped by a human ("codex-skip")
+          skip_labels = {"codex-in-progress", "codex-pr-open", "codex-skip"}
 
           cmd = [
               "gh",
@@ -188,7 +198,7 @@ jobs:
               "## Constraints",
               f"- Work ONLY on Issue #{number}. Do not address other issues.",
               "- Follow the issue acceptance criteria exactly; keep changes minimal and scoped.",
-              "- Do not add tests.",
+              "- Add or update tests when appropriate; run existing tests/build commands if present.",
               "- Do not create a pull request (the workflow will do it).",
               "- Do not change GitHub Actions workflows unless the issue explicitly requires it.",
               "",
@@ -215,7 +225,7 @@ jobs:
           output-file: codex-output.md
           safety-strategy: drop-sudo
           sandbox: workspace-write
-          codex-args: '["--ask-for-approval","never","--config","sandbox_workspace_write.network_access=true"]'
+          codex-args: '["--config","approval_policy=\"never\"","--config","sandbox_workspace_write.network_access=true"]'
 
       - name: Commit changes (if any)
         if: steps.pick.outputs.issue_number != ''
