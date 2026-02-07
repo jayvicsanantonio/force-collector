@@ -2,6 +2,8 @@ import "../global.css";
 
 import { Stack } from "expo-router";
 import { ThemeProvider } from "../src/theme/ThemeProvider";
+import { QueryClientProvider } from "@tanstack/react-query";
+import { queryClient } from "../src/api/queryClient";
 import {
   useFonts,
   SpaceGrotesk_400Regular,
@@ -23,17 +25,19 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="(modals)"
-          options={{
-            presentation: "modal",
-            headerShown: false,
-          }}
-        />
-      </Stack>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeProvider>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="(modals)"
+            options={{
+              presentation: "modal",
+              headerShown: false,
+            }}
+          />
+        </Stack>
+      </ThemeProvider>
+    </QueryClientProvider>
   );
 }
