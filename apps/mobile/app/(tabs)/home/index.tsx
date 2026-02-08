@@ -8,15 +8,21 @@ import { ScreenHeader } from "../../../src/components/ScreenHeader";
 import { StatCard } from "../../../src/components/StatCard";
 import { Avatar } from "../../../src/components/Avatar";
 import { useTheme } from "../../../src/theme/ThemeProvider";
+import { useDashboardSummary } from "../../../src/offline/hooks";
+import { useOfflineStatus } from "../../../src/offline/OfflineProvider";
 
 export default function HomeScreen() {
   const { allegiance, toggleAllegiance, accentTextClass } = useTheme();
+  const summary = useDashboardSummary();
+  const { isOnline } = useOfflineStatus();
 
   return (
     <View className="flex-1 bg-void">
       <ScreenHeader
         title="Design System"
-        subtitle={`Allegiance: ${allegiance.toUpperCase()}`}
+        subtitle={`Allegiance: ${allegiance.toUpperCase()} · ${
+          isOnline ? "Online" : "Offline"
+        }`}
         rightSlot={
           <Button
             label="Toggle"
@@ -54,10 +60,18 @@ export default function HomeScreen() {
               </Card>
               <View className="flex-row gap-3">
                 <View className="flex-1">
-                  <StatCard label="Total Figures" value="248" helper="+12" />
+                  <StatCard
+                    label="Owned"
+                    value={summary.totalOwned.toString()}
+                    helper={`${summary.pendingSync} pending sync`}
+                  />
                 </View>
                 <View className="flex-1">
-                  <StatCard label="Wishlist" value="37" helper="Tracked" />
+                  <StatCard
+                    label="Wishlist"
+                    value={summary.totalWishlist.toString()}
+                    helper="Cached"
+                  />
                 </View>
               </View>
             </View>
