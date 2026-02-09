@@ -1,6 +1,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import PlaceholderScreen from "../../../src/PlaceholderScreen";
 import { signOutAndClearUserData } from "../../../src/offline/session";
+import { captureError, track } from "../../../src/observability";
 
 export default function SettingsScreen() {
   return (
@@ -15,9 +16,38 @@ export default function SettingsScreen() {
         </Text>
         <Pressable
           style={styles.button}
-          onPress={() => signOutAndClearUserData()}
+          onPress={async () => {
+            track("profile_sign_out");
+            try {
+              await signOutAndClearUserData();
+            } catch (error) {
+              captureError(error, { source: "settings", action: "sign_out" });
+            }
+          }}
         >
           <Text style={styles.buttonText}>Sign out</Text>
+        </Pressable>
+      </View>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Observability</Text>
+        <Text style={styles.cardText}>
+          Send a test event or error to verify analytics/crash reporting.
+        </Text>
+        <Pressable
+          style={styles.button}
+          onPress={() => track("test_event", { source: "settings" })}
+        >
+          <Text style={styles.buttonText}>Send Test Event</Text>
+        </Pressable>
+        <Pressable
+          style={styles.button}
+          onPress={() =>
+            captureError(new Error("Test error from Settings"), {
+              source: "settings",
+            })
+          }
+        >
+          <Text style={styles.buttonText}>Send Test Error</Text>
         </Pressable>
       </View>
     </PlaceholderScreen>

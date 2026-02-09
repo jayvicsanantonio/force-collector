@@ -13,6 +13,7 @@
     "@expo-google-fonts/space-grotesk": "^0.2.3",
     "@expo/vector-icons": "^15.0.3",
     "@react-navigation/native": "^7.1.8",
+    "@sentry/react-native": "^6.15.0",
     "@tanstack/react-query": "^5.62.0",
     "@react-native-community/netinfo": "^11.4.1",
     "expo": "~54.0.32",

@@ -1,14 +1,22 @@
 import { router } from "expo-router";
+import { useEffect } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import PlaceholderScreen from "../../../src/PlaceholderScreen";
 import { useMe } from "../../../src/api/me";
 import type { ApiError } from "../../../src/api/client";
 import { env } from "../../../src/env";
+import { useTheme } from "../../../src/theme/ThemeProvider";
+import { track } from "../../../src/observability";
 
 export default function ProfileScreen() {
   const { data, isLoading, error } = useMe();
   const apiError = error as ApiError | null;
   const hasApiBaseUrl = Boolean(env.API_BASE_URL);
+  const { allegiance, toggleAllegiance } = useTheme();
+
+  useEffect(() => {
+    track("profile_viewed");
+  }, []);
 
   return (
     <PlaceholderScreen
@@ -38,6 +46,23 @@ export default function ProfileScreen() {
         onPress={() => router.push("/profile/settings")}
       >
         <Text style={styles.buttonText}>Go to Settings</Text>
+      </Pressable>
+      <Pressable
+        style={styles.button}
+        onPress={() => {
+          toggleAllegiance();
+          track("profile_theme_changed", {
+            allegiance: allegiance === "light" ? "dark" : "light",
+          });
+        }}
+      >
+        <Text style={styles.buttonText}>Toggle Theme</Text>
+      </Pressable>
+      <Pressable
+        style={styles.button}
+        onPress={() => track("profile_notifications_opened")}
+      >
+        <Text style={styles.buttonText}>Open Notifications</Text>
       </Pressable>
     </PlaceholderScreen>
   );
