@@ -1,4 +1,5 @@
 import { router } from "expo-router";
+import { useEffect } from "react";
 import {
   FlatList,
   Pressable,
@@ -11,11 +12,16 @@ import {
   useFiguresByStatus,
   useUpdateFigureStatus,
 } from "../../../src/offline/hooks";
+import { track } from "../../../src/observability";
 
 export default function CollectionScreen() {
   const { isOnline, syncNow } = useOfflineStatus();
   const { data } = useFiguresByStatus("OWNED");
   const updateStatus = useUpdateFigureStatus();
+
+  useEffect(() => {
+    track("collection_grid_viewed");
+  }, []);
 
   return (
     <View style={styles.screen}>
@@ -24,6 +30,27 @@ export default function CollectionScreen() {
         <Text style={styles.subtitle}>
           {isOnline ? "Online" : "Offline"} · Cached list
         </Text>
+      </View>
+
+      <View style={styles.actionRow}>
+        <Pressable
+          style={styles.smallButton}
+          onPress={() => track("collection_search_used")}
+        >
+          <Text style={styles.smallButtonText}>Search</Text>
+        </Pressable>
+        <Pressable
+          style={styles.smallButton}
+          onPress={() => track("collection_filter_applied")}
+        >
+          <Text style={styles.smallButtonText}>Filter</Text>
+        </Pressable>
+        <Pressable
+          style={styles.smallButton}
+          onPress={() => track("collection_sort_changed")}
+        >
+          <Text style={styles.smallButtonText}>Sort</Text>
+        </Pressable>
       </View>
 
       {!isOnline ? (
@@ -66,7 +93,10 @@ export default function CollectionScreen() {
 
       <Pressable
         style={styles.linkButton}
-        onPress={() => router.push("/collection/details")}
+        onPress={() => {
+          track("collection_item_opened");
+          router.push("/collection/details");
+        }}
       >
         <Text style={styles.linkButtonText}>Go to Figure Details</Text>
       </Pressable>
@@ -94,6 +124,25 @@ const styles = StyleSheet.create({
     fontSize: 12,
     letterSpacing: 1,
     textTransform: "uppercase",
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+  },
+  smallButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "#2f4566",
+    backgroundColor: "#0f1826",
+  },
+  smallButtonText: {
+    color: "#a7c4ff",
+    fontSize: 12,
+    fontWeight: "600",
   },
   banner: {
     marginHorizontal: 20,

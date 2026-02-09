@@ -38,6 +38,15 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="analytics"
+        options={{
+          title: "Analytics",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="stats-chart" color={color} size={size} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="wishlist"
         options={{
           title: "Wishlist",

@@ -5,6 +5,8 @@ import { ThemeProvider } from "../src/theme/ThemeProvider";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { queryClient } from "../src/api/queryClient";
 import { OfflineProvider } from "../src/offline/OfflineProvider";
+import { useEffect } from "react";
+import { initObservability, wrapWithObservability } from "../src/observability";
 import {
   useFonts,
   SpaceGrotesk_400Regular,
@@ -13,13 +15,17 @@ import {
   SpaceGrotesk_700Bold,
 } from "@expo-google-fonts/space-grotesk";
 
-export default function RootLayout() {
+function RootLayout() {
   const [fontsLoaded] = useFonts({
     SpaceGrotesk_400Regular,
     SpaceGrotesk_500Medium,
     SpaceGrotesk_600SemiBold,
     SpaceGrotesk_700Bold,
   });
+
+  useEffect(() => {
+    initObservability();
+  }, []);
 
   if (!fontsLoaded) {
     return null;
@@ -44,3 +50,5 @@ export default function RootLayout() {
     </QueryClientProvider>
   );
 }
+
+export default wrapWithObservability(RootLayout);
