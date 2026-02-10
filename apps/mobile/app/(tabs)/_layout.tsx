@@ -1,11 +1,24 @@
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useEffect } from "react";
+import { useAuth } from "../../src/auth/AuthProvider";
 import { useTheme } from "../../src/theme/ThemeProvider";
 import { allegianceToAccent, themeColors } from "../../src/theme/theme";
 
 export default function TabsLayout() {
+  const { status } = useAuth();
   const { allegiance } = useTheme();
   const accentColor = allegianceToAccent(allegiance);
+
+  useEffect(() => {
+    if (status === "signedOut") {
+      router.replace("/");
+    }
+  }, [status]);
+
+  if (status === "checking") {
+    return null;
+  }
 
   return (
     <Tabs

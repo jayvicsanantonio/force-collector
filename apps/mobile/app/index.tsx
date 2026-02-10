@@ -1,31 +1,51 @@
 import { router } from "expo-router";
 import { useEffect } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { authConfig } from "../src/auth/config";
+import { useAuth } from "../src/auth/AuthProvider";
 import { track } from "../src/observability";
 
 export default function Index() {
+  const { status } = useAuth();
+
   useEffect(() => {
     track("splash_viewed");
   }, []);
+
+  useEffect(() => {
+    if (status === "signedIn" && authConfig.bypassSplashWhenSignedIn) {
+      router.replace("/home");
+    }
+  }, [status]);
+
+  const isChecking = status === "checking";
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Force Collector</Text>
       <Text style={styles.subtitle}>Welcome to the collection hub.</Text>
+      {isChecking ? (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator size="small" color="#06b6d4" />
+          <Text style={styles.loadingText}>Checking session...</Text>
+        </View>
+      ) : null}
       <Pressable
-        style={styles.primaryButton}
+        style={[styles.primaryButton, isChecking && styles.disabledButton]}
+        disabled={isChecking}
         onPress={() => {
           track("splash_get_started_tapped");
-          router.replace("/home");
+          router.replace("/(auth)/create-account");
         }}
       >
         <Text style={styles.primaryButtonText}>Get Started</Text>
       </Pressable>
       <Pressable
-        style={styles.secondaryButton}
+        style={[styles.secondaryButton, isChecking && styles.disabledButton]}
+        disabled={isChecking}
         onPress={() => {
           track("splash_access_existing_tapped");
-          router.replace("/home");
+          router.replace("/(auth)/sign-in");
         }}
       >
         <Text style={styles.secondaryButtonText}>Access Existing Data</Text>
@@ -51,6 +71,16 @@ const styles = StyleSheet.create({
     color: "#91a4c7",
     fontSize: 14,
     lineHeight: 20,
+  },
+  loadingRow: {
+    marginTop: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  loadingText: {
+    color: "#91a4c7",
+    fontSize: 12,
   },
   primaryButton: {
     marginTop: 24,
@@ -81,5 +111,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     textAlign: "center",
+  },
+  disabledButton: {
+    opacity: 0.6,
   },
 });

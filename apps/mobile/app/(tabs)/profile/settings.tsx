@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
 import PlaceholderScreen from "../../../src/PlaceholderScreen";
 import { signOutAndClearUserData } from "../../../src/offline/session";
 import { captureError, track } from "../../../src/observability";
@@ -20,6 +21,7 @@ export default function SettingsScreen() {
             track("profile_sign_out");
             try {
               await signOutAndClearUserData();
+              router.replace("/");
             } catch (error) {
               captureError(error, { source: "settings", action: "sign_out" });
             }
