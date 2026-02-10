@@ -1,5 +1,6 @@
 import NetInfo from "@react-native-community/netinfo";
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
+import { useAuth } from "../auth/AuthProvider";
 import { getDatabase } from "./db";
 import { syncPendingMutations } from "./sync";
 
@@ -14,11 +15,17 @@ const OfflineContext = createContext<OfflineContextValue>({
 });
 
 export function OfflineProvider({ children }: { children: React.ReactNode }) {
+  const { status, user } = useAuth();
   const [isOnline, setIsOnline] = useState(true);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
+    if (status === "checking") {
+      return;
+    }
+
     let mounted = true;
+    setReady(false);
     getDatabase()
       .then(() => {
         if (mounted) {
@@ -33,7 +40,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [status, user?.id]);
 
   useEffect(() => {
     const unsubscribe = NetInfo.addEventListener((state) => {
@@ -65,7 +72,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     [isOnline, syncNow]
   );
 
-  if (!ready) {
+  if (!ready && status !== "checking") {
     return null;
   }
 
