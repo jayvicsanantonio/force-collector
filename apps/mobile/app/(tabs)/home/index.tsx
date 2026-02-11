@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
 import { Chip } from "../../../src/components/Chip";
@@ -18,6 +18,10 @@ export default function HomeScreen() {
   const { allegiance, toggleAllegiance, accentTextClass } = useTheme();
   const summary = useDashboardSummary();
   const { isOnline } = useOfflineStatus();
+  const params = useLocalSearchParams<{
+    highlight?: string;
+    figureId?: string;
+  }>();
 
   useEffect(() => {
     track("dashboard_viewed");
@@ -40,6 +44,16 @@ export default function HomeScreen() {
       />
       <ScrollView className="flex-1" contentContainerStyle={styles.content}>
         <View className="gap-6">
+          {(params.highlight || params.figureId) && (
+            <View className="rounded-2xl border border-hud-line/60 bg-raised-surface/70 px-4 py-3">
+              <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
+                Notification
+              </Text>
+              <Text className="mt-2 text-sm text-frost-text">
+                Opened for {params.highlight ?? params.figureId}.
+              </Text>
+            </View>
+          )}
           <View>
             <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
               Buttons

@@ -25,3 +25,5 @@ enabled = true
 [functions]
 [functions.health]
 verify_jwt = false
+[functions.api]
+verify_jwt = true

@@ -8,6 +8,9 @@ import { OfflineProvider } from "../src/offline/OfflineProvider";
 import { AuthProvider } from "../src/auth/AuthProvider";
 import { useEffect } from "react";
 import { initObservability, wrapWithObservability } from "../src/observability";
+import { configureNotificationHandler } from "../src/notifications/push";
+import { registerNotificationRouting } from "../src/notifications/routing";
+import { PushRegistrationGate } from "../src/notifications/PushRegistrationGate";
 import {
   useFonts,
   SpaceGrotesk_400Regular,
@@ -26,6 +29,9 @@ function RootLayout() {
 
   useEffect(() => {
     initObservability();
+    configureNotificationHandler();
+    const teardown = registerNotificationRouting();
+    return teardown;
   }, []);
 
   if (!fontsLoaded) {
@@ -35,6 +41,7 @@ function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <PushRegistrationGate />
         <OfflineProvider>
           <ThemeProvider>
             <Stack>
