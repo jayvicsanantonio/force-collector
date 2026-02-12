@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect } from "react";
 import {
   FlatList,
@@ -18,6 +18,7 @@ export default function WishlistScreen() {
   const { isOnline, syncNow } = useOfflineStatus();
   const { data } = useFiguresByStatus("WISHLIST");
   const updateStatus = useUpdateFigureStatus();
+  const params = useLocalSearchParams<{ figureId?: string }>();
 
   useEffect(() => {
     track("wishlist_viewed");
@@ -75,6 +76,15 @@ export default function WishlistScreen() {
         data={data}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
+        ListHeaderComponent={
+          params.figureId ? (
+            <View style={styles.banner}>
+              <Text style={styles.bannerText}>
+                Highlighted from notification: {params.figureId}
+              </Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           <Text style={styles.emptyText}>No cached wishlist items yet.</Text>
         }

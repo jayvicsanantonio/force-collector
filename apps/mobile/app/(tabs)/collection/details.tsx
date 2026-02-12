@@ -2,8 +2,17 @@ import { useEffect } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import PlaceholderScreen from "../../../src/PlaceholderScreen";
 import { track } from "../../../src/observability";
+import { useLocalSearchParams } from "expo-router";
 
 export default function FigureDetailsScreen() {
+  const params = useLocalSearchParams<{
+    figureId?: string;
+    userFigureId?: string;
+    source?: string;
+  }>();
+  const target =
+    params.userFigureId ?? params.figureId ?? undefined;
+
   useEffect(() => {
     track("figure_details_viewed");
   }, []);
@@ -11,7 +20,11 @@ export default function FigureDetailsScreen() {
   return (
     <PlaceholderScreen
       title="Figure Details & Lore"
-      description="Placeholder for figure details, lore, and actions."
+      description={
+        target
+          ? `Opened from ${params.source ?? "notification"} for ${target}.`
+          : "Placeholder for figure details, lore, and actions."
+      }
     >
       <Pressable
         style={styles.button}
