@@ -9,7 +9,7 @@ const config: ExpoConfig = {
   orientation: "portrait",
   newArchEnabled: true,
   userInterfaceStyle: "dark",
-  plugins: ["expo-router", "expo-notifications"],
+  plugins: ["expo-router", "expo-notifications", "expo-camera"],
   extra: {
     API_BASE_URL: process.env.API_BASE_URL ?? "",
     SUPABASE_URL: process.env.SUPABASE_URL ?? "",
