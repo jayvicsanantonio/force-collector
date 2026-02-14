@@ -28,6 +28,12 @@ function normalizePath(pathname: string) {
 
 const DEFAULT_LOOKUP_TTL_HOURS = 24;
 const DEFAULT_PROVIDER_TTL_HOURS = 12;
+const DEFAULT_LORE_TTL_HOURS = 168;
+
+const FIGURE_SELECT_FIELDS =
+  "id,name,subtitle,edition,series,wave,release_year,era,faction,exclusivity,upc,primary_image_url,lore,specs,created_at,updated_at";
+const FIGURE_LORE_FIELDS =
+  "id,name,subtitle,edition,lore,lore_updated_at,lore_source";
 
 type ScanLookupResult = {
   match: Record<string, unknown> | null;
@@ -35,6 +41,8 @@ type ScanLookupResult = {
   related: Record<string, unknown>[];
   listings: Record<string, unknown>[];
 };
+
+type AuthedSupabase = ReturnType<typeof createClient>;
 
 function hoursFromNow(hours: number) {
   return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
@@ -51,7 +59,11 @@ async function fetchFigure(
   supabase: ReturnType<typeof createClient>,
   id: string
 ) {
-  const { data } = await supabase.from("figures").select("*").eq("id", id).maybeSingle();
+  const { data } = await supabase
+    .from("figures")
+    .select(FIGURE_SELECT_FIELDS)
+    .eq("id", id)
+    .maybeSingle();
   return data ?? null;
 }
 
@@ -62,7 +74,10 @@ async function fetchFigures(
   if (!ids.length) {
     return [];
   }
-  const { data } = await supabase.from("figures").select("*").in("id", ids);
+  const { data } = await supabase
+    .from("figures")
+    .select(FIGURE_SELECT_FIELDS)
+    .in("id", ids);
   return data ?? [];
 }
 
@@ -199,8 +214,149 @@ async function fetchBarcodeLookupProducts(upc: string) {
   }
 }
 
+function createAuthedClient(
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  authHeader: string
+) {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: {
+      headers: { Authorization: authHeader },
+    },
+  });
+}
+
 function normalizeBarcode(value: string) {
   return value.replace(/[^0-9]/g, "");
+}
+
+function parseFilters(searchParams: URLSearchParams) {
+  let filters: Record<string, unknown> = {};
+  const rawFilters = searchParams.get("filters");
+
+  if (rawFilters) {
+    try {
+      const parsed = JSON.parse(rawFilters);
+      if (parsed && typeof parsed === "object") {
+        filters = parsed as Record<string, unknown>;
+      }
+    } catch {
+      return { error: "filters must be valid JSON." };
+    }
+  }
+
+  const era = searchParams.get("era");
+  const series = searchParams.get("series");
+  const faction = searchParams.get("faction");
+
+  return {
+    error: null,
+    filters: {
+      era: era ?? filters.era,
+      series: series ?? filters.series,
+      faction: faction ?? filters.faction,
+    },
+  };
+}
+
+function normalizeFilterValues(value: unknown) {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return [value.trim()];
+  }
+  return [] as string[];
+}
+
+function isLoreFresh(updatedAt: string | null, ttlHours: number) {
+  if (!updatedAt) {
+    return false;
+  }
+  const timestamp = new Date(updatedAt).getTime();
+  if (Number.isNaN(timestamp)) {
+    return false;
+  }
+  return timestamp > Date.now() - ttlHours * 60 * 60 * 1000;
+}
+
+function buildLoreSearchTerm(name: string, subtitle?: string | null) {
+  const base = name.replace(/\([^)]*\)/g, "").trim();
+  if (subtitle && subtitle.trim()) {
+    return `${base} ${subtitle.trim()}`.trim();
+  }
+  return base || name;
+}
+
+async function fetchWookieepediaLore(name: string, subtitle?: string | null) {
+  const term = buildLoreSearchTerm(name, subtitle);
+  if (!term) {
+    return null;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8000);
+
+  try {
+    const searchUrl = new URL("https://starwars.fandom.com/api.php");
+    searchUrl.searchParams.set("action", "query");
+    searchUrl.searchParams.set("list", "search");
+    searchUrl.searchParams.set("srsearch", term);
+    searchUrl.searchParams.set("srlimit", "1");
+    searchUrl.searchParams.set("format", "json");
+
+    const searchResponse = await fetch(searchUrl.toString(), {
+      method: "GET",
+      signal: controller.signal,
+    });
+    if (!searchResponse.ok) {
+      return null;
+    }
+
+    const searchJson = (await searchResponse.json()) as Record<string, unknown>;
+    const searchResults = (searchJson.query as Record<string, unknown> | undefined)
+      ?.search as Array<Record<string, unknown>> | undefined;
+    const pageId = searchResults?.[0]?.pageid as number | undefined;
+
+    if (!pageId) {
+      return null;
+    }
+
+    const extractUrl = new URL("https://starwars.fandom.com/api.php");
+    extractUrl.searchParams.set("action", "query");
+    extractUrl.searchParams.set("prop", "extracts");
+    extractUrl.searchParams.set("exintro", "1");
+    extractUrl.searchParams.set("explaintext", "1");
+    extractUrl.searchParams.set("pageids", String(pageId));
+    extractUrl.searchParams.set("format", "json");
+
+    const extractResponse = await fetch(extractUrl.toString(), {
+      method: "GET",
+      signal: controller.signal,
+    });
+
+    if (!extractResponse.ok) {
+      return null;
+    }
+
+    const extractJson = (await extractResponse.json()) as Record<string, unknown>;
+    const pages = (extractJson.query as Record<string, unknown> | undefined)
+      ?.pages as Record<string, Record<string, unknown>> | undefined;
+    const page = pages?.[String(pageId)];
+    const extract = typeof page?.extract === "string" ? page.extract : "";
+    const trimmed = extract.replace(/\s+/g, " ").trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    return trimmed.length > 800 ? trimmed.slice(0, 800).trim() : trimmed;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function extractProducts(payload: Record<string, unknown> | null) {
@@ -354,6 +510,17 @@ async function resolveScanLookup(
   };
 }
 
+async function requireUser(supabase: AuthedSupabase) {
+  const {
+    data: { user },
+    error,
+  } = await supabase.auth.getUser();
+  if (error || !user) {
+    return { user: null, error: error ?? new Error("Unauthorized") };
+  }
+  return { user, error: null };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -361,6 +528,169 @@ serve(async (req) => {
 
   const url = new URL(req.url);
   const path = normalizePath(url.pathname);
+
+  if (path === "/v1/figures" && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { error: authError } = await requireUser(supabase);
+    if (authError) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    const { error: filterError, filters } = parseFilters(url.searchParams);
+    if (filterError) {
+      return jsonResponse({ message: filterError }, 400);
+    }
+
+    const query = url.searchParams.get("query")?.trim();
+    const limit = Number(url.searchParams.get("limit") || 25);
+
+    let builder = supabase
+      .from("figures")
+      .select(FIGURE_SELECT_FIELDS)
+      .order("name", { ascending: true })
+      .limit(Number.isFinite(limit) ? Math.min(Math.max(limit, 1), 100) : 25);
+
+    if (query) {
+      const escaped = query.replace(/%/g, "\\%");
+      builder = builder.or(`name.ilike.%${escaped}%,subtitle.ilike.%${escaped}%`);
+    }
+
+    const eraValues = normalizeFilterValues(filters.era).map((value) =>
+      value.toUpperCase()
+    );
+    const seriesValues = normalizeFilterValues(filters.series);
+    const factionValues = normalizeFilterValues(filters.faction);
+
+    if (eraValues.length) {
+      builder = builder.in("era", eraValues);
+    }
+    if (seriesValues.length) {
+      builder = builder.in("series", seriesValues);
+    }
+    if (factionValues.length) {
+      builder = builder.in("faction", factionValues);
+    }
+
+    const { data, error } = await builder;
+    if (error) {
+      return jsonResponse({ message: error.message }, 500);
+    }
+
+    return jsonResponse({ items: data ?? [], next_cursor: null });
+  }
+
+  if (path.startsWith("/v1/figures/") && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const segments = path.split("/").filter(Boolean);
+    const figureId = segments[2];
+    const isLoreRequest = segments.length === 4 && segments[3] === "lore";
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { error: authError } = await requireUser(supabase);
+    if (authError) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    if (!figureId) {
+      return jsonResponse({ message: "Figure id is required." }, 400);
+    }
+
+    if (!isLoreRequest) {
+      const { data, error } = await supabase
+        .from("figures")
+        .select(FIGURE_SELECT_FIELDS)
+        .eq("id", figureId)
+        .maybeSingle();
+      if (error) {
+        return jsonResponse({ message: error.message }, 500);
+      }
+      if (!data) {
+        return jsonResponse({ message: "Figure not found." }, 404);
+      }
+      return jsonResponse(data);
+    }
+
+    const refreshParam = url.searchParams.get("refresh");
+    const refresh =
+      refreshParam === "1" || refreshParam?.toLowerCase() === "true";
+
+    const { data: figure, error: figureError } = await supabase
+      .from("figures")
+      .select(FIGURE_LORE_FIELDS)
+      .eq("id", figureId)
+      .maybeSingle();
+    if (figureError) {
+      return jsonResponse({ message: figureError.message }, 500);
+    }
+    if (!figure) {
+      return jsonResponse({ message: "Figure not found." }, 404);
+    }
+
+    const loreTtlHours = Number(
+      Deno.env.get("LORE_CACHE_HOURS") || DEFAULT_LORE_TTL_HOURS
+    );
+    const needsRefresh =
+      refresh ||
+      !figure.lore ||
+      !isLoreFresh(figure.lore_updated_at as string | null, loreTtlHours);
+
+    let refreshed = false;
+    let lore = figure.lore as string | null | undefined;
+    let loreUpdatedAt = figure.lore_updated_at as string | null | undefined;
+    let loreSource = figure.lore_source as string | null | undefined;
+
+    if (needsRefresh) {
+      const fetchedLore = await fetchWookieepediaLore(
+        figure.name as string,
+        (figure.subtitle as string | null | undefined) ?? null
+      );
+      if (fetchedLore) {
+        const supabaseServiceKey =
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+        if (!supabaseServiceKey) {
+          return jsonResponse({ message: "Supabase env not configured." }, 500);
+        }
+        const serviceClient = createClient(supabaseUrl, supabaseServiceKey);
+        const now = new Date().toISOString();
+        const { error: updateError } = await serviceClient
+          .from("figures")
+          .update({
+            lore: fetchedLore,
+            lore_updated_at: now,
+            lore_source: "wookieepedia",
+          })
+          .eq("id", figureId);
+        if (updateError) {
+          return jsonResponse({ message: updateError.message }, 500);
+        }
+        lore = fetchedLore;
+        loreUpdatedAt = now;
+        loreSource = "wookieepedia";
+        refreshed = true;
+      }
+    }
+
+    return jsonResponse({
+      figure_id: figureId,
+      lore,
+      lore_updated_at: loreUpdatedAt ?? null,
+      lore_source: loreSource ?? null,
+      refreshed,
+    });
+  }
 
   if (path === "/v1/push/register" && req.method === "POST") {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
