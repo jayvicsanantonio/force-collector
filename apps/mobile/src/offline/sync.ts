@@ -1,13 +1,20 @@
 import { z } from "zod";
 import { env } from "../env";
 import { apiRequest } from "../api/client";
-import { applyServerUpdate, clearSyncPending, getFigureById } from "./cache";
+import { applyServerUpdate, clearSyncPending, getFigureById, replaceFigureIdentity } from "./cache";
 import { listPendingMutations, removeMutation } from "./queue";
 import type { PendingMutation } from "./types";
 
 const UserFigureUpdateSchema = z.object({
   id: z.string(),
   status: z.string(),
+  updated_at: z.string().datetime().optional(),
+});
+
+const UserFigureCreateSchema = z.object({
+  id: z.string(),
+  figure_id: z.string().optional().nullable(),
+  status: z.string().optional(),
   updated_at: z.string().datetime().optional(),
 });
 
@@ -54,6 +61,32 @@ async function syncMutation(mutation: PendingMutation) {
     } else {
       await clearSyncPending(mutation.entityId);
     }
+
+    await removeMutation(mutation.id);
+    return true;
+  }
+
+  if (mutation.type === "create_user_figure") {
+    const response = await apiRequest({
+      path: "/v1/user-figures",
+      method: "POST",
+      body: {
+        figure_id: mutation.payload.figureId,
+        status: mutation.payload.status,
+        condition: "UNKNOWN",
+      },
+      schema: UserFigureCreateSchema,
+      auth: "required",
+    });
+
+    const resolvedUpdatedAt =
+      response.updated_at ?? mutation.payload.updatedAt;
+    await replaceFigureIdentity(
+      mutation.entityId,
+      response.id,
+      resolvedUpdatedAt,
+      response.figure_id ?? mutation.payload.figureId
+    );
 
     await removeMutation(mutation.id);
     return true;

@@ -12,7 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialIcons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -39,6 +39,7 @@ type ScanState =
 const BARCODE_LENGTHS = new Set([8, 12, 13, 14]);
 
 export default function ScannerScreen() {
+  const params = useLocalSearchParams<{ restart?: string }>();
   const { accentTextClass, accentBorderClass } = useTheme();
   const [permission, requestPermission] = useCameraPermissions();
   const scanLookup = useScanLookup();
@@ -74,6 +75,19 @@ export default function ScannerScreen() {
       setScanState(permission.canAskAgain ? "requesting" : "permission-denied");
     }
   }, [permission]);
+
+  useEffect(() => {
+    if (!params.restart) {
+      return;
+    }
+    processingRef.current = false;
+    setLookupError(null);
+    if (permission?.granted) {
+      setScanState("scanning");
+    } else {
+      setScanState(permission?.canAskAgain ? "requesting" : "permission-denied");
+    }
+  }, [params.restart, permission?.canAskAgain, permission?.granted]);
 
   useEffect(() => {
     let active = true;
