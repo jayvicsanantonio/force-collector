@@ -46,6 +46,7 @@ async function migrate(db: SQLite.SQLiteDatabase) {
 
     CREATE TABLE IF NOT EXISTS figures (
       id TEXT PRIMARY KEY NOT NULL,
+      figure_id TEXT,
       name TEXT NOT NULL,
       series TEXT,
       status TEXT NOT NULL,
@@ -63,6 +64,12 @@ async function migrate(db: SQLite.SQLiteDatabase) {
       created_at TEXT NOT NULL
     );
   `);
+
+  try {
+    await db.execAsync("ALTER TABLE figures ADD COLUMN figure_id TEXT;");
+  } catch {
+    // Column already exists.
+  }
 }
 
 async function seedIfEmpty(db: SQLite.SQLiteDatabase) {
