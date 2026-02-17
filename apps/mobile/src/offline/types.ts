@@ -1,4 +1,4 @@
-export type FigureStatus = "OWNED" | "WISHLIST";
+export type FigureStatus = "OWNED" | "WISHLIST" | "PREORDER" | "SOLD";
 
 export type CachedFigure = {
   id: string;
