@@ -90,6 +90,7 @@ export const UserFigureSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .optional(),
   notes: z.string().optional(),
+  photo_refs: z.array(z.string()).optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
