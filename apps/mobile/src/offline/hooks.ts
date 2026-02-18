@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   getDashboardSummary,
+  getFigureById,
   getFigureByFigureId,
   listFiguresByStatus,
   upsertFigureRecord,
@@ -77,6 +78,41 @@ export function useFigureByFigureId(figureId?: string | null) {
     setData(figure);
     setLoading(false);
   }, [figureId]);
+
+  useEffect(() => {
+    let mounted = true;
+    load().catch(() => {
+      if (mounted) {
+        setLoading(false);
+      }
+    });
+    const unsubscribe = subscribeToFigureChanges(() => {
+      load().catch(() => undefined);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [load]);
+
+  return { data, loading, refresh: load };
+}
+
+export function useFigureById(id?: string | null) {
+  const [data, setData] = useState<CachedFigure | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!id) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const figure = await getFigureById(id);
+    setData(figure);
+    setLoading(false);
+  }, [id]);
 
   useEffect(() => {
     let mounted = true;
