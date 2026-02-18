@@ -19,6 +19,7 @@ import { StatCard } from "../../../src/components/StatCard";
 import { useTheme } from "../../../src/theme/ThemeProvider";
 import { useOfflineStatus } from "../../../src/offline/OfflineProvider";
 import { applyServerUpdate } from "../../../src/offline/cache";
+import { supabase } from "../../../src/auth/supabase";
 import {
   useFigureByFigureId,
   useFigureById,
@@ -130,6 +131,7 @@ export default function FigureDetailsScreen() {
   const [optimisticStatus, setOptimisticStatus] = useState<FigureStatus | null>(
     null
   );
+  const [photoUrls, setPhotoUrls] = useState<string[]>([]);
 
   const userFigureById = useFigureById(params.userFigureId ?? null);
   const userFigureByFigureId = useFigureByFigureId(params.figureId ?? null);
@@ -157,6 +159,46 @@ export default function FigureDetailsScreen() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadPhotos = async () => {
+      if (!userFigure?.photoRefs?.length) {
+        if (mounted) {
+          setPhotoUrls([]);
+        }
+        return;
+      }
+      if (!isOnline) {
+        if (mounted) {
+          setPhotoUrls([]);
+        }
+        return;
+      }
+      try {
+        const signed = await Promise.all(
+          userFigure.photoRefs.map(async (ref) => {
+            const { data } = await supabase
+              .storage
+              .from("user-photos")
+              .createSignedUrl(ref, 60 * 60);
+            return data?.signedUrl ?? null;
+          })
+        );
+        if (mounted) {
+          setPhotoUrls(signed.filter((url): url is string => Boolean(url)));
+        }
+      } catch {
+        if (mounted) {
+          setPhotoUrls([]);
+        }
+      }
+    };
+    loadPhotos().catch(() => undefined);
+    return () => {
+      mounted = false;
+    };
+  }, [isOnline, userFigure?.photoRefs?.join("|")]);
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
@@ -299,6 +341,26 @@ export default function FigureDetailsScreen() {
     : null;
 
   const isCompact = width < 360;
+  const conditionLabel = useMemo(() => {
+    switch (userFigure?.condition) {
+      case "MINT":
+        return "Mint";
+      case "OPENED":
+        return "Opened";
+      case "LOOSE":
+        return "Loose";
+      default:
+        return "Unknown";
+    }
+  }, [userFigure?.condition]);
+
+  const purchaseLabel = useMemo(() => {
+    if (userFigure?.purchasePrice === null || userFigure?.purchasePrice === undefined) {
+      return "—";
+    }
+    const currency = userFigure.purchaseCurrency ?? "USD";
+    return `${currency} ${userFigure.purchasePrice.toFixed(2)}`;
+  }, [userFigure?.purchaseCurrency, userFigure?.purchasePrice]);
 
   return (
     <View className="flex-1 bg-void">
@@ -419,6 +481,82 @@ export default function FigureDetailsScreen() {
               value={figure?.series ?? figureSeries}
             />
           </View>
+        </View>
+
+        <View className="mt-6 gap-3">
+          <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
+            Acquisition Details
+          </Text>
+          <Card className="gap-4">
+            <View className="flex-row flex-wrap gap-4">
+              <View className="min-w-[120px] flex-1">
+                <Text className="text-[10px] font-space-semibold uppercase tracking-widest text-secondary-text">
+                  Condition
+                </Text>
+                <Text className="mt-1 text-sm font-space-medium text-frost-text">
+                  {conditionLabel}
+                </Text>
+              </View>
+              <View className="min-w-[120px] flex-1">
+                <Text className="text-[10px] font-space-semibold uppercase tracking-widest text-secondary-text">
+                  Purchase Price
+                </Text>
+                <Text className="mt-1 text-sm font-space-medium text-frost-text">
+                  {purchaseLabel}
+                </Text>
+              </View>
+              <View className="min-w-[120px] flex-1">
+                <Text className="text-[10px] font-space-semibold uppercase tracking-widest text-secondary-text">
+                  Purchase Date
+                </Text>
+                <Text className="mt-1 text-sm font-space-medium text-frost-text">
+                  {userFigure?.purchaseDate ?? "—"}
+                </Text>
+              </View>
+            </View>
+            <View className="gap-2">
+              <Text className="text-[10px] font-space-semibold uppercase tracking-widest text-secondary-text">
+                Notes
+              </Text>
+              {userFigure?.notes ? (
+                <Text className="text-sm leading-5 text-frost-text">
+                  {userFigure.notes}
+                </Text>
+              ) : (
+                <Text className="text-sm text-muted-text">
+                  No notes added yet.
+                </Text>
+              )}
+            </View>
+            <View className="gap-2">
+              <Text className="text-[10px] font-space-semibold uppercase tracking-widest text-secondary-text">
+                Photos
+              </Text>
+              {photoUrls.length > 0 ? (
+                <View className="flex-row flex-wrap gap-2">
+                  {photoUrls.map((url) => (
+                    <Image
+                      key={url}
+                      source={{ uri: url }}
+                      className="h-16 w-16 rounded-xl"
+                      resizeMode="cover"
+                      accessibilityLabel="User photo"
+                    />
+                  ))}
+                </View>
+              ) : userFigure?.photoRefs?.length ? (
+                <Text className="text-sm text-muted-text">
+                  {isOnline
+                    ? "Loading photos..."
+                    : "Photos are available when you're online."}
+                </Text>
+              ) : (
+                <Text className="text-sm text-muted-text">
+                  No photos added yet.
+                </Text>
+              )}
+            </View>
+          </Card>
         </View>
 
         <View className="mt-6 gap-3">

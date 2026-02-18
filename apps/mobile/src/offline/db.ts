@@ -52,6 +52,12 @@ async function migrate(db: SQLite.SQLiteDatabase) {
       status TEXT NOT NULL,
       last_price REAL,
       in_stock INTEGER,
+      condition TEXT,
+      purchase_price REAL,
+      purchase_currency TEXT,
+      purchase_date TEXT,
+      notes TEXT,
+      photo_refs TEXT,
       updated_at TEXT NOT NULL,
       sync_pending INTEGER NOT NULL DEFAULT 0
     );
@@ -67,6 +73,36 @@ async function migrate(db: SQLite.SQLiteDatabase) {
 
   try {
     await db.execAsync("ALTER TABLE figures ADD COLUMN figure_id TEXT;");
+  } catch {
+    // Column already exists.
+  }
+  try {
+    await db.execAsync("ALTER TABLE figures ADD COLUMN condition TEXT;");
+  } catch {
+    // Column already exists.
+  }
+  try {
+    await db.execAsync("ALTER TABLE figures ADD COLUMN purchase_price REAL;");
+  } catch {
+    // Column already exists.
+  }
+  try {
+    await db.execAsync("ALTER TABLE figures ADD COLUMN purchase_currency TEXT;");
+  } catch {
+    // Column already exists.
+  }
+  try {
+    await db.execAsync("ALTER TABLE figures ADD COLUMN purchase_date TEXT;");
+  } catch {
+    // Column already exists.
+  }
+  try {
+    await db.execAsync("ALTER TABLE figures ADD COLUMN notes TEXT;");
+  } catch {
+    // Column already exists.
+  }
+  try {
+    await db.execAsync("ALTER TABLE figures ADD COLUMN photo_refs TEXT;");
   } catch {
     // Column already exists.
   }
