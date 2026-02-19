@@ -8,6 +8,12 @@ export type CachedFigure = {
   status: FigureStatus;
   lastPrice: number | null;
   inStock: boolean | null;
+  condition?: "MINT" | "OPENED" | "LOOSE" | "UNKNOWN";
+  purchasePrice?: number | null;
+  purchaseCurrency?: string | null;
+  purchaseDate?: string | null;
+  notes?: string | null;
+  photoRefs?: string[] | null;
   updatedAt: string;
   syncPending: boolean;
 };
@@ -32,6 +38,21 @@ export type PendingMutation =
         status: FigureStatus;
         name: string;
         series: string | null;
+        updatedAt: string;
+      };
+      createdAt: string;
+    }
+  | {
+      id: string;
+      type: "details_update";
+      entityId: string;
+      payload: {
+        condition?: "MINT" | "OPENED" | "LOOSE" | "UNKNOWN" | null;
+        purchasePrice?: number | null;
+        purchaseCurrency?: string | null;
+        purchaseDate?: string | null;
+        notes?: string | null;
+        photoRefs?: string[] | null;
         updatedAt: string;
       };
       createdAt: string;

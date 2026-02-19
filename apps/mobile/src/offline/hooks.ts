@@ -5,6 +5,7 @@ import {
   getFigureByFigureId,
   listFiguresByStatus,
   upsertFigureRecord,
+  updateFigureDetails,
   updateFigureStatus,
 } from "./cache";
 import { queueMutation } from "./queue";
@@ -168,6 +169,31 @@ export function useUpsertFigureRecord() {
           type: "create_user_figure",
           entityId: input.id,
           payload: queueCreate,
+        });
+      }
+      return updated;
+    },
+    []
+  );
+}
+
+export function useUpdateFigureDetails() {
+  return useCallback(
+    async (id: string, payload: Parameters<typeof updateFigureDetails>[1]) => {
+      const updated = await updateFigureDetails(id, payload);
+      if (updated) {
+        await queueMutation({
+          type: "details_update",
+          entityId: id,
+          payload: {
+            condition: updated.condition ?? null,
+            purchasePrice: updated.purchasePrice ?? null,
+            purchaseCurrency: updated.purchaseCurrency ?? null,
+            purchaseDate: updated.purchaseDate ?? null,
+            notes: updated.notes ?? null,
+            photoRefs: updated.photoRefs ?? null,
+            updatedAt: updated.updatedAt,
+          },
         });
       }
       return updated;
