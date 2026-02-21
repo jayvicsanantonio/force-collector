@@ -27,3 +27,7 @@ enabled = true
 verify_jwt = false
 [functions.api]
 verify_jwt = true
+[functions.price-check]
+verify_jwt = false
+[functions.alert-dispatch]
+verify_jwt = false
