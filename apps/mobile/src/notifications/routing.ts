@@ -45,7 +45,8 @@ export function resolveNotificationPath(payload: NotificationPayload) {
         figureId: payload.figure_id,
       });
     case "restock":
-      return buildPath("/wishlist", {
+      return buildPath("/wishlist/details", {
+        userFigureId: payload.user_figure_id,
         figureId: payload.figure_id,
       });
     case "new_drop":
