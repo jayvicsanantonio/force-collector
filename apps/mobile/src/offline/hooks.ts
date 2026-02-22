@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  getCachedDashboardSummary,
   getDashboardSummary,
   getFigureById,
   getFigureByFigureId,
   listFiguresByStatus,
+  listRecentFigures,
   upsertFigureRecord,
   updateFigureDetails,
   updateFigureStatus,
@@ -42,26 +44,75 @@ export function useFiguresByStatus(status: FigureStatus) {
 }
 
 export function useDashboardSummary() {
-  const [summary, setSummary] = useState<DashboardSummary>({
-    totalOwned: 0,
-    totalWishlist: 0,
-    pendingSync: 0,
-  });
+  const cached = getCachedDashboardSummary();
+  const [summary, setSummary] = useState<DashboardSummary>(
+    cached ?? {
+      totalOwned: 0,
+      totalWishlist: 0,
+      pendingSync: 0,
+      estimatedValue: 0,
+      completionPercent: 0,
+    }
+  );
+  const [loading, setLoading] = useState(!cached);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    const result = await getDashboardSummary();
-    setSummary(result);
-  }, []);
+  const load = useCallback(
+    async (background = false) => {
+      if (background) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      const result = await getDashboardSummary();
+      setSummary(result);
+      setLoading(false);
+      setRefreshing(false);
+    },
+    []
+  );
 
   useEffect(() => {
-    load().catch(() => undefined);
+    load(Boolean(cached)).catch(() => {
+      setLoading(false);
+      setRefreshing(false);
+    });
+    const unsubscribe = subscribeToFigureChanges(() => {
+      load(true).catch(() => undefined);
+    });
+    return () => unsubscribe();
+  }, [cached, load]);
+
+  return { summary, loading, refreshing };
+}
+
+export function useRecentFigures(limit: number) {
+  const [data, setData] = useState<CachedFigure[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    const figures = await listRecentFigures(limit);
+    setData(figures);
+    setLoading(false);
+  }, [limit]);
+
+  useEffect(() => {
+    let mounted = true;
+    load().catch(() => {
+      if (mounted) {
+        setLoading(false);
+      }
+    });
     const unsubscribe = subscribeToFigureChanges(() => {
       load().catch(() => undefined);
     });
-    return () => unsubscribe();
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
   }, [load]);
 
-  return summary;
+  return { data, loading, refresh: load };
 }
 
 export function useFigureByFigureId(figureId?: string | null) {

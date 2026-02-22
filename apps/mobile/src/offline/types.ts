@@ -62,4 +62,6 @@ export type DashboardSummary = {
   totalOwned: number;
   totalWishlist: number;
   pendingSync: number;
+  estimatedValue: number;
+  completionPercent: number;
 };

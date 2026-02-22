@@ -2,6 +2,12 @@ import { getDatabase } from "./db";
 import { notifyFigureChanges } from "./events";
 import type { CachedFigure, DashboardSummary, FigureStatus } from "./types";
 
+let cachedDashboardSummary: DashboardSummary | null = null;
+
+export function getCachedDashboardSummary() {
+  return cachedDashboardSummary;
+}
+
 function mapRow(row: {
   id: string;
   figure_id: string | null;
@@ -80,6 +86,31 @@ export async function listFiguresByStatus(status: FigureStatus) {
   return rows.map(mapRow);
 }
 
+export async function listRecentFigures(limit: number) {
+  const db = await getDatabase();
+  const rows = await db.getAllAsync<{
+    id: string;
+    figure_id: string | null;
+    name: string;
+    series: string | null;
+    status: FigureStatus;
+    last_price: number | null;
+    in_stock: number | null;
+    condition: string | null;
+    purchase_price: number | null;
+    purchase_currency: string | null;
+    purchase_date: string | null;
+    notes: string | null;
+    photo_refs: string | null;
+    updated_at: string;
+    sync_pending: number;
+  }>(
+    "SELECT id, figure_id, name, series, status, last_price, in_stock, condition, purchase_price, purchase_currency, purchase_date, notes, photo_refs, updated_at, sync_pending FROM figures ORDER BY updated_at DESC LIMIT ?",
+    [limit]
+  );
+  return rows.map(mapRow);
+}
+
 export async function getDashboardSummary(): Promise<DashboardSummary> {
   const db = await getDatabase();
   const owned = await db.getFirstAsync<{ count: number }>(
@@ -88,15 +119,29 @@ export async function getDashboardSummary(): Promise<DashboardSummary> {
   const wishlist = await db.getFirstAsync<{ count: number }>(
     "SELECT COUNT(*) as count FROM figures WHERE status = 'WISHLIST'"
   );
+  const value = await db.getFirstAsync<{ total: number | null }>(
+    "SELECT SUM(COALESCE(last_price, purchase_price, 0)) as total FROM figures WHERE status = 'OWNED'"
+  );
   const pending = await db.getFirstAsync<{ count: number }>(
     "SELECT COUNT(*) as count FROM figures WHERE sync_pending = 1"
   );
 
-  return {
-    totalOwned: owned?.count ?? 0,
-    totalWishlist: wishlist?.count ?? 0,
+  const totalOwned = owned?.count ?? 0;
+  const totalWishlist = wishlist?.count ?? 0;
+  const completionBase = totalOwned + totalWishlist;
+  const completionPercent =
+    completionBase > 0
+      ? Math.round((totalOwned / completionBase) * 100)
+      : 0;
+  const summary = {
+    totalOwned,
+    totalWishlist,
     pendingSync: pending?.count ?? 0,
+    estimatedValue: value?.total ?? 0,
+    completionPercent,
   };
+  cachedDashboardSummary = summary;
+  return summary;
 }
 
 export async function getFigureById(id: string): Promise<CachedFigure | null> {
