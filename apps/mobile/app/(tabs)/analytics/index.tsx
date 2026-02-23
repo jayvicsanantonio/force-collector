@@ -2,12 +2,14 @@ import { useEffect } from "react";
 import { Pressable, StyleSheet, Text } from "react-native";
 import PlaceholderScreen from "../../../src/PlaceholderScreen";
 import { track } from "../../../src/observability";
+import { useActiveGoalProgress } from "../../../src/api/goals";
 
 const ranges = ["all_time", "last_year", "last_30_days"] as const;
 
 type Range = (typeof ranges)[number];
 
 export default function AnalyticsScreen() {
+  const goalProgress = useActiveGoalProgress();
   useEffect(() => {
     track("analytics_viewed");
   }, []);
@@ -21,6 +23,9 @@ export default function AnalyticsScreen() {
       title="Collection Analytics"
       description="Placeholder for analytics charts and KPIs."
     >
+      <Text style={styles.summaryText}>
+        Completion: {goalProgress.data?.progress.percent_complete ?? 0}%
+      </Text>
       {ranges.map((range) => (
         <Pressable
           key={range}
@@ -47,5 +52,10 @@ const styles = StyleSheet.create({
     color: "#e6f0ff",
     fontSize: 14,
     fontWeight: "600",
+  },
+  summaryText: {
+    color: "#94a3b8",
+    marginBottom: 12,
+    fontSize: 13,
   },
 });

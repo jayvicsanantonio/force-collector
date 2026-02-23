@@ -6,6 +6,7 @@ import {
   PriceAlertSchema,
   PriceHistoryPointSchema,
   RetailerListingSchema,
+  GoalSchema,
   UserFigureSchema,
   UserProfileSchema,
   UserSchema,
@@ -135,3 +136,13 @@ export const AnalyticsDistributionResponseSchema = z.object({
 export type AnalyticsDistributionResponse = z.infer<
   typeof AnalyticsDistributionResponseSchema
 >;
+
+export const GoalProgressResponseSchema = z.object({
+  goal: GoalSchema,
+  progress: z.object({
+    owned_count: z.number().int(),
+    total_count: z.number().int(),
+    percent_complete: z.number(),
+  }),
+});
+export type GoalProgressResponse = z.infer<typeof GoalProgressResponseSchema>;

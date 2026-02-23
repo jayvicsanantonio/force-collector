@@ -170,3 +170,45 @@ export const DistributionBreakdownSchema = z.record(
   z.number().int().nonnegative()
 );
 export type DistributionBreakdown = z.infer<typeof DistributionBreakdownSchema>;
+
+export const GoalProgressRuleSchema = z.enum(["OWNED_COUNT"]);
+export type GoalProgressRule = z.infer<typeof GoalProgressRuleSchema>;
+
+export const GoalEraSchema = z.enum([
+  "PREQUEL",
+  "ORIGINAL",
+  "SEQUEL",
+  "TV",
+  "GAMING",
+  "OTHER",
+]);
+export type GoalEra = z.infer<typeof GoalEraSchema>;
+
+export const GoalTargetSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("figures"),
+    figure_ids: z.array(z.string().uuid()).min(1),
+  }),
+  z.object({
+    type: z.literal("wave"),
+    wave: z.string().min(1),
+  }),
+  z.object({
+    type: z.literal("era"),
+    era: GoalEraSchema,
+  }),
+]);
+export type GoalTarget = z.infer<typeof GoalTargetSchema>;
+
+export const GoalSchema = z.object({
+  id: z.string().uuid(),
+  user_id: z.string().uuid().nullable().optional(),
+  name: z.string(),
+  target: GoalTargetSchema,
+  progress_rule: GoalProgressRuleSchema,
+  is_active: z.boolean(),
+  is_template: z.boolean(),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+export type Goal = z.infer<typeof GoalSchema>;

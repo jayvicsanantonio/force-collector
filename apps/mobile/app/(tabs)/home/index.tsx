@@ -13,11 +13,13 @@ import { useTheme } from "../../../src/theme/ThemeProvider";
 import { useDashboardSummary } from "../../../src/offline/hooks";
 import { useOfflineStatus } from "../../../src/offline/OfflineProvider";
 import { track } from "../../../src/observability";
+import { useActiveGoalProgress } from "../../../src/api/goals";
 
 export default function HomeScreen() {
   const { allegiance, toggleAllegiance, accentTextClass } = useTheme();
   const summary = useDashboardSummary();
   const { isOnline } = useOfflineStatus();
+  const goalProgress = useActiveGoalProgress();
   const params = useLocalSearchParams<{
     highlight?: string;
     figureId?: string;
@@ -54,6 +56,44 @@ export default function HomeScreen() {
               </Text>
             </View>
           )}
+          <Card>
+            <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
+              Hunt Progress
+            </Text>
+            <Text className="mt-2 text-base font-space-semibold text-frost-text">
+              {goalProgress.data?.goal.name ?? "Active Goal"}
+            </Text>
+            <View className="mt-3 h-2 w-full rounded-full bg-hud-line/60">
+              <View
+                className="h-2 rounded-full bg-electric-cyan"
+                style={{
+                  width: `${Math.min(
+                    100,
+                    Math.max(0, goalProgress.data?.progress.percent_complete ?? 0)
+                  )}%`,
+                }}
+              />
+            </View>
+            <View className="mt-3 flex-row items-center justify-between">
+              <Text className="text-xs text-secondary-text">
+                {goalProgress.data?.progress.owned_count ?? 0} /{" "}
+                {goalProgress.data?.progress.total_count ?? 0} collected
+              </Text>
+              <Text className="text-xs text-secondary-text">
+                {goalProgress.data?.progress.percent_complete ?? 0}% complete
+              </Text>
+            </View>
+            <View className="mt-4">
+              <Button
+                label="View Wishlist"
+                variant="secondary"
+                onPress={() => {
+                  track("dashboard_view_wishlist_tapped");
+                  router.push("/wishlist");
+                }}
+              />
+            </View>
+          </Card>
           <View>
             <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
               Buttons
