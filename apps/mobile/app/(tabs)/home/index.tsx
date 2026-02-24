@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Avatar } from "../../../src/components/Avatar";
 import { Badge } from "../../../src/components/Badge";
 import { Button } from "../../../src/components/Button";
@@ -15,6 +15,7 @@ import type { CachedFigure, FigureStatus } from "../../../src/offline/types";
 import { useTheme } from "../../../src/theme/ThemeProvider";
 import { cx } from "../../../src/utils/cx";
 import { track } from "../../../src/observability";
+import { useActiveGoalProgress } from "../../../src/api/goals";
 
 const RECENT_DROPS_LIMIT = 6;
 
@@ -52,6 +53,11 @@ export default function HomeScreen() {
   );
   const { isOnline } = useOfflineStatus();
   const { accentTextClass } = useTheme();
+  const goalProgress = useActiveGoalProgress();
+  const params = useLocalSearchParams<{
+    highlight?: string;
+    figureId?: string;
+  }>();
 
   useEffect(() => {
     track("dashboard_viewed");
@@ -80,6 +86,16 @@ export default function HomeScreen() {
     huntGoal.target > 0
       ? Math.min(huntGoal.completed / huntGoal.target, 1)
       : 0;
+  const activeGoalName = goalProgress.data?.goal.name ?? huntGoal.name;
+  const activeGoalOwned = goalProgress.data?.progress.owned_count ?? huntGoal.completed;
+  const activeGoalTotal = goalProgress.data?.progress.total_count ?? huntGoal.target;
+  const activeGoalPercent = Math.min(
+    100,
+    Math.max(
+      0,
+      goalProgress.data?.progress.percent_complete ?? Math.round(huntProgress * 100)
+    )
+  );
 
   return (
     <View className="flex-1 bg-void">
@@ -122,6 +138,16 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View className="gap-6">
+          {(params.highlight || params.figureId) && (
+            <View className="rounded-2xl border border-hud-line/60 bg-raised-surface/70 px-4 py-3">
+              <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
+                Notification
+              </Text>
+              <Text className="mt-2 text-sm text-frost-text">
+                Opened for {params.highlight ?? params.figureId}.
+              </Text>
+            </View>
+          )}
           <View>
             <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
               Summary
@@ -175,7 +201,7 @@ export default function HomeScreen() {
                 <StatCard
                   label="Completion"
                   value={completionLabel}
-                  helper={huntGoal.name}
+                  helper={activeGoalName}
                 />
               )}
             </View>
@@ -288,15 +314,15 @@ export default function HomeScreen() {
             <Card className="mt-3 gap-4">
               <View className="gap-1">
                 <Text className="text-sm font-space-semibold text-frost-text">
-                  {huntGoal.name}
+                  {activeGoalName}
                 </Text>
                 <Text className="text-xs text-secondary-text">
-                  {huntGoal.completed} / {huntGoal.target} collected
+                  {activeGoalOwned} / {activeGoalTotal} collected
                 </Text>
               </View>
               <View className="h-2 w-full rounded-full bg-raised-surface">
                 <View
-                  style={{ width: `${Math.round(huntProgress * 100)}%` }}
+                  style={{ width: `${Math.round(activeGoalPercent)}%` }}
                   className="h-2 rounded-full bg-bright-cyan"
                 />
               </View>

@@ -15,6 +15,7 @@ export const queryKeys = {
   wishlist: (query?: string) => ["wishlist", query ?? ""],
   price: (userFigureId: string) => ["price", userFigureId],
   priceAlerts: () => ["price-alerts"],
+  goalProgress: () => ["goals", "active", "progress"],
   analyticsSummary: (range: string) => ["analytics", "summary", range],
   analyticsSeries: (range: string) => ["analytics", "series", range],
   analyticsDistribution: (by: string, range: string) => [

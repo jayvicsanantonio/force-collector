@@ -38,6 +38,7 @@ const USER_FIGURE_SELECT_FIELDS =
   "id,user_id,figure_id,custom_figure_payload,status,condition,purchase_price,purchase_currency,purchase_date,notes,photo_refs,created_at,updated_at";
 const USER_FIGURE_STATUSES = ["OWNED", "WISHLIST", "PREORDER", "SOLD"] as const;
 const USER_FIGURE_CONDITIONS = ["MINT", "OPENED", "LOOSE", "UNKNOWN"] as const;
+const GOAL_PROGRESS_RULES = ["OWNED_COUNT"] as const;
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
 type ScanLookupResult = {
@@ -586,6 +587,191 @@ function normalizeUserFigure(row: Record<string, unknown> | null) {
     delete normalized.photo_refs;
   }
   return normalized;
+}
+
+function isGoalProgressRule(value: unknown): value is (typeof GOAL_PROGRESS_RULES)[number] {
+  return typeof value === "string" && GOAL_PROGRESS_RULES.includes(value as any);
+}
+
+function buildGoalTarget(goal: Record<string, unknown>) {
+  const figureIds = Array.isArray(goal.target_figure_ids)
+    ? goal.target_figure_ids.filter((value) => typeof value === "string")
+    : [];
+  if (figureIds.length) {
+    return { type: "figures", figure_ids: figureIds };
+  }
+  if (typeof goal.target_wave === "string" && goal.target_wave.trim()) {
+    return { type: "wave", wave: goal.target_wave };
+  }
+  if (typeof goal.target_era === "string" && goal.target_era.trim()) {
+    return { type: "era", era: goal.target_era };
+  }
+  return null;
+}
+
+async function ensureActiveGoal(
+  supabase: AuthedSupabase,
+  userId: string
+): Promise<Record<string, unknown> | null> {
+  const { data: active, error: activeError } = await supabase
+    .from("goals")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (activeError) {
+    throw activeError;
+  }
+  if (active) {
+    return active as Record<string, unknown>;
+  }
+
+  const { data: existing, error: existingError } = await supabase
+    .from("goals")
+    .select("*")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (existingError) {
+    throw existingError;
+  }
+  if (existing) {
+    const now = new Date().toISOString();
+    const { data: updated, error: updateError } = await supabase
+      .from("goals")
+      .update({ is_active: true, updated_at: now })
+      .eq("id", existing.id as string)
+      .select("*")
+      .maybeSingle();
+    if (updateError) {
+      throw updateError;
+    }
+    return updated ? (updated as Record<string, unknown>) : null;
+  }
+
+  const { data: template, error: templateError } = await supabase
+    .from("goals")
+    .select("*")
+    .eq("is_template", true)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (templateError) {
+    throw templateError;
+  }
+  if (!template) {
+    return null;
+  }
+
+  const now = new Date().toISOString();
+  const record = {
+    user_id: userId,
+    name: template.name,
+    target_figure_ids: template.target_figure_ids ?? null,
+    target_wave: template.target_wave ?? null,
+    target_era: template.target_era ?? null,
+    progress_rule: isGoalProgressRule(template.progress_rule)
+      ? template.progress_rule
+      : "OWNED_COUNT",
+    is_active: true,
+    is_template: false,
+    created_at: now,
+    updated_at: now,
+  };
+
+  const { data: created, error: createError } = await supabase
+    .from("goals")
+    .insert(record)
+    .select("*")
+    .maybeSingle();
+  if (createError) {
+    throw createError;
+  }
+  return created ? (created as Record<string, unknown>) : null;
+}
+
+async function computeGoalProgress(
+  supabase: AuthedSupabase,
+  userId: string,
+  goal: Record<string, unknown>
+) {
+  const target = buildGoalTarget(goal);
+  if (!target) {
+    return { target: null, owned: 0, total: 0 };
+  }
+
+  if (target.type === "figures") {
+    const { count: totalCount, error: totalError } = await supabase
+      .from("figures")
+      .select("id", { count: "exact", head: true })
+      .in("id", target.figure_ids);
+    if (totalError) {
+      throw totalError;
+    }
+    const { count: ownedCount, error: ownedError } = await supabase
+      .from("user_figures")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "OWNED")
+      .in("figure_id", target.figure_ids);
+    if (ownedError) {
+      throw ownedError;
+    }
+    return {
+      target,
+      owned: ownedCount ?? 0,
+      total: totalCount ?? 0,
+    };
+  }
+
+  if (target.type === "wave") {
+    const { count: totalCount, error: totalError } = await supabase
+      .from("figures")
+      .select("id", { count: "exact", head: true })
+      .eq("wave", target.wave);
+    if (totalError) {
+      throw totalError;
+    }
+    const { count: ownedCount, error: ownedError } = await supabase
+      .from("user_figures")
+      .select("id, figures!inner(id)", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "OWNED")
+      .eq("figures.wave", target.wave);
+    if (ownedError) {
+      throw ownedError;
+    }
+    return {
+      target,
+      owned: ownedCount ?? 0,
+      total: totalCount ?? 0,
+    };
+  }
+
+  const { count: totalCount, error: totalError } = await supabase
+    .from("figures")
+    .select("id", { count: "exact", head: true })
+    .eq("era", target.era);
+  if (totalError) {
+    throw totalError;
+  }
+  const { count: ownedCount, error: ownedError } = await supabase
+    .from("user_figures")
+    .select("id, figures!inner(id)", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "OWNED")
+    .eq("figures.era", target.era);
+  if (ownedError) {
+    throw ownedError;
+  }
+  return {
+    target,
+    owned: ownedCount ?? 0,
+    total: totalCount ?? 0,
+  };
 }
 
 serve(async (req) => {
@@ -1173,6 +1359,75 @@ serve(async (req) => {
     }
 
     return jsonResponse({ success: true });
+  }
+
+  if (path === "/v1/goals/active/progress" && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    let goal: Record<string, unknown> | null = null;
+    try {
+      goal = await ensureActiveGoal(supabase, user.id);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to load goal." },
+        500
+      );
+    }
+
+    if (!goal) {
+      return jsonResponse({ message: "No goal template configured." }, 404);
+    }
+
+    let progress;
+    try {
+      progress = await computeGoalProgress(supabase, user.id, goal);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to compute progress." },
+        500
+      );
+    }
+
+    const totalCount = progress.total;
+    const ownedCount = progress.owned;
+    const percent =
+      totalCount > 0 ? Math.round((ownedCount / totalCount) * 1000) / 10 : 0;
+    const target = progress.target;
+    if (!target) {
+      return jsonResponse({ message: "Goal target is missing." }, 500);
+    }
+
+    return jsonResponse({
+      goal: {
+        id: goal.id,
+        user_id: goal.user_id ?? null,
+        name: goal.name,
+        target,
+        progress_rule: isGoalProgressRule(goal.progress_rule)
+          ? goal.progress_rule
+          : "OWNED_COUNT",
+        is_active: Boolean(goal.is_active),
+        is_template: Boolean(goal.is_template),
+        created_at: goal.created_at,
+        updated_at: goal.updated_at,
+      },
+      progress: {
+        owned_count: ownedCount,
+        total_count: totalCount,
+        percent_complete: percent,
+      },
+    });
   }
 
   if (path === "/v1/push/register" && req.method === "POST") {
