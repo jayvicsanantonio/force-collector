@@ -589,6 +589,61 @@ function normalizeUserFigure(row: Record<string, unknown> | null) {
   return normalized;
 }
 
+const ANALYTICS_RANGES = ["all_time", "year", "30d"] as const;
+const NIL_UUID = "00000000-0000-0000-0000-000000000000";
+
+type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
+
+function isAnalyticsRange(value: unknown): value is AnalyticsRange {
+  return typeof value === "string" && ANALYTICS_RANGES.includes(value as any);
+}
+
+function addDays(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() + days);
+  return copy;
+}
+
+function toDateOnly(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function getRangeStart(range: AnalyticsRange) {
+  const now = new Date();
+  if (range === "30d") {
+    return addDays(now, -30);
+  }
+  if (range === "year") {
+    return addDays(now, -365);
+  }
+  return null;
+}
+
+function getBucketDate(date: Date, range: AnalyticsRange) {
+  if (range === "30d") {
+    return toDateOnly(date);
+  }
+  const bucket = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  return toDateOnly(bucket);
+}
+
+function toNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 function isGoalProgressRule(value: unknown): value is (typeof GOAL_PROGRESS_RULES)[number] {
   return typeof value === "string" && GOAL_PROGRESS_RULES.includes(value as any);
 }
@@ -772,6 +827,117 @@ async function computeGoalProgress(
     owned: ownedCount ?? 0,
     total: totalCount ?? 0,
   };
+}
+
+type OwnedFigureRow = {
+  id: string;
+  figure_id: string | null;
+  created_at: string;
+  purchase_price: number | string | null;
+  figures?: {
+    era?: string | null;
+    release_year?: number | null;
+    exclusivity?: string | null;
+    name?: string | null;
+    series?: string | null;
+  } | null;
+};
+
+async function fetchOwnedFigures(
+  supabase: AuthedSupabase,
+  userId: string,
+  rangeStart?: Date | null,
+  rangeEnd?: Date | null
+) {
+  let query = supabase
+    .from("user_figures")
+    .select(
+      "id,figure_id,created_at,purchase_price,figures(era,release_year,exclusivity,name,series)"
+    )
+    .eq("user_id", userId)
+    .eq("status", "OWNED")
+    .order("created_at", { ascending: true });
+
+  if (rangeStart) {
+    query = query.gte("created_at", rangeStart.toISOString());
+  }
+  if (rangeEnd) {
+    query = query.lt("created_at", rangeEnd.toISOString());
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as OwnedFigureRow[];
+}
+
+async function fetchWishlistCount(
+  supabase: AuthedSupabase,
+  userId: string,
+  rangeStart?: Date | null,
+  rangeEnd?: Date | null
+) {
+  let query = supabase
+    .from("user_figures")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("status", "WISHLIST");
+
+  if (rangeStart) {
+    query = query.gte("created_at", rangeStart.toISOString());
+  }
+  if (rangeEnd) {
+    query = query.lt("created_at", rangeEnd.toISOString());
+  }
+
+  const { count, error } = await query;
+  if (error) {
+    throw error;
+  }
+  return count ?? 0;
+}
+
+async function fetchListings(
+  supabase: AuthedSupabase,
+  figureIds: string[]
+) {
+  if (!figureIds.length) {
+    return [];
+  }
+  const { data, error } = await supabase
+    .from("retailer_listings")
+    .select("id,figure_id,current_price,in_stock")
+    .in("figure_id", figureIds);
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as {
+    id: string;
+    figure_id: string;
+    current_price: number | string | null;
+    in_stock: boolean | null;
+  }[];
+}
+
+async function fetchPriceHistory(
+  supabase: AuthedSupabase,
+  listingIds: string[]
+) {
+  if (!listingIds.length) {
+    return [];
+  }
+  const { data, error } = await supabase
+    .from("price_history_points")
+    .select("retailer_listing_id,price")
+    .in("retailer_listing_id", listingIds);
+  if (error) {
+    throw error;
+  }
+  return (data ?? []) as {
+    retailer_listing_id: string;
+    price: number | string;
+  }[];
 }
 
 serve(async (req) => {
@@ -1359,6 +1525,389 @@ serve(async (req) => {
     }
 
     return jsonResponse({ success: true });
+  }
+
+  if (path === "/v1/analytics/summary" && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const rangeParam = url.searchParams.get("range");
+    if (!isAnalyticsRange(rangeParam)) {
+      return jsonResponse({ message: "Invalid range." }, 400);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    const rangeStart = getRangeStart(rangeParam);
+    let ownedFigures: OwnedFigureRow[] = [];
+    try {
+      ownedFigures = await fetchOwnedFigures(supabase, user.id, rangeStart);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to load figures." },
+        500
+      );
+    }
+
+    let wishlistCount = 0;
+    try {
+      wishlistCount = await fetchWishlistCount(supabase, user.id, rangeStart);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to load wishlist." },
+        500
+      );
+    }
+
+    const figureIds = [
+      ...new Set(
+        ownedFigures.map((figure) => figure.figure_id).filter(Boolean) as string[]
+      ),
+    ];
+
+    let listings = [] as Awaited<ReturnType<typeof fetchListings>>;
+    try {
+      listings = await fetchListings(supabase, figureIds);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to load pricing." },
+        500
+      );
+    }
+
+    const listingMeta = new Map<
+      string,
+      { allPrices: number[]; inStockPrices: number[]; listingIds: string[]; total: number; inStock: number }
+    >();
+    for (const listing of listings) {
+      const price = toNumber(listing.current_price);
+      const entry = listingMeta.get(listing.figure_id) ?? {
+        allPrices: [],
+        inStockPrices: [],
+        listingIds: [],
+        total: 0,
+        inStock: 0,
+      };
+      entry.total += 1;
+      if (listing.in_stock) {
+        entry.inStock += 1;
+      }
+      if (price !== null) {
+        entry.allPrices.push(price);
+        if (listing.in_stock) {
+          entry.inStockPrices.push(price);
+        }
+      }
+      entry.listingIds.push(listing.id);
+      listingMeta.set(listing.figure_id, entry);
+    }
+
+    const valueByFigureId = new Map<string, number>();
+    for (const [figureId, entry] of listingMeta.entries()) {
+      const prices = entry.inStockPrices.length ? entry.inStockPrices : entry.allPrices;
+      if (prices.length) {
+        valueByFigureId.set(figureId, Math.max(...prices));
+      }
+    }
+
+    let estimatedValue = 0;
+    for (const figure of ownedFigures) {
+      let value = 0;
+      if (figure.figure_id && valueByFigureId.has(figure.figure_id)) {
+        value = valueByFigureId.get(figure.figure_id) ?? 0;
+      } else {
+        const purchasePrice = toNumber(figure.purchase_price);
+        value = purchasePrice ?? 0;
+      }
+      estimatedValue += value;
+    }
+
+    let valueChangePercent = 0;
+    if (rangeParam !== "all_time") {
+      const rangeDays = rangeParam === "30d" ? 30 : 365;
+      const previousStart = rangeStart ? addDays(rangeStart, -rangeDays) : null;
+      if (previousStart && rangeStart) {
+        let priorFigures: OwnedFigureRow[] = [];
+        try {
+          priorFigures = await fetchOwnedFigures(
+            supabase,
+            user.id,
+            previousStart,
+            rangeStart
+          );
+        } catch {
+          priorFigures = [];
+        }
+
+        const priorFigureIds = [
+          ...new Set(
+            priorFigures.map((figure) => figure.figure_id).filter(Boolean) as string[]
+          ),
+        ];
+
+        let priorListings = [] as Awaited<ReturnType<typeof fetchListings>>;
+        try {
+          priorListings = await fetchListings(supabase, priorFigureIds);
+        } catch {
+          priorListings = [];
+        }
+
+        const priorListingMeta = new Map<string, number[]>();
+        for (const listing of priorListings) {
+          const price = toNumber(listing.current_price);
+          if (price === null) continue;
+          const prices = priorListingMeta.get(listing.figure_id) ?? [];
+          prices.push(price);
+          priorListingMeta.set(listing.figure_id, prices);
+        }
+
+        let priorValue = 0;
+        for (const figure of priorFigures) {
+          let value = 0;
+          if (figure.figure_id && priorListingMeta.has(figure.figure_id)) {
+            const prices = priorListingMeta.get(figure.figure_id) ?? [];
+            value = prices.length ? Math.max(...prices) : 0;
+          } else {
+            const purchasePrice = toNumber(figure.purchase_price);
+            value = purchasePrice ?? 0;
+          }
+          priorValue += value;
+        }
+
+        if (priorValue > 0) {
+          valueChangePercent = ((estimatedValue - priorValue) / priorValue) * 100;
+        } else {
+          valueChangePercent = estimatedValue > 0 ? 100 : 0;
+        }
+      }
+    }
+
+    let rarestItemId = NIL_UUID;
+    if (ownedFigures.length) {
+      const history = await fetchPriceHistory(
+        supabase,
+        listings.flatMap((listing) => listing.id)
+      );
+      const listingIdToFigure = new Map<string, string>();
+      listings.forEach((listing) => {
+        listingIdToFigure.set(listing.id, listing.figure_id);
+      });
+      const volatilityByFigure = new Map<string, number[]>();
+      for (const point of history) {
+        const figureId = listingIdToFigure.get(point.retailer_listing_id);
+        if (!figureId) continue;
+        const price = toNumber(point.price);
+        if (price === null) continue;
+        const values = volatilityByFigure.get(figureId) ?? [];
+        values.push(price);
+        volatilityByFigure.set(figureId, values);
+      }
+
+      const currentYear = new Date().getUTCFullYear();
+      let bestScore = -1;
+      let bestId = NIL_UUID;
+
+      for (const figure of ownedFigures) {
+        const figureMeta = figure.figures ?? {};
+        const exclusivity = (figureMeta.exclusivity ?? "").toString().toLowerCase();
+        let exclusivityScore = 5;
+        if (exclusivity.includes("convention")) {
+          exclusivityScore = 30;
+        } else if (exclusivity.includes("exclusive")) {
+          exclusivityScore = 20;
+        }
+
+        const releaseYear = toNumber(figureMeta.release_year);
+        const ageScore = releaseYear ? clamp((currentYear - releaseYear) * 1.5, 0, 30) : 0;
+
+        const listingInfo = figure.figure_id
+          ? listingMeta.get(figure.figure_id)
+          : undefined;
+        let scarcityScore = 0;
+        if (listingInfo) {
+          if (listingInfo.total > 0 && listingInfo.inStock === 0) {
+            scarcityScore = 25;
+          } else if (listingInfo.inStock <= 1) {
+            scarcityScore = 15;
+          }
+        }
+
+        const historyPoints =
+          figure.figure_id ? volatilityByFigure.get(figure.figure_id) ?? [] : [];
+        let volatilityScore = 0;
+        if (historyPoints.length > 1) {
+          const max = Math.max(...historyPoints);
+          const min = Math.min(...historyPoints);
+          if (max > 0) {
+            volatilityScore = clamp(((max - min) / max) * 20, 0, 20);
+          }
+        }
+
+        const score = clamp(
+          exclusivityScore + ageScore + scarcityScore + volatilityScore,
+          0,
+          100
+        );
+        if (score > bestScore) {
+          bestScore = score;
+          bestId = figure.id;
+        }
+      }
+
+      rarestItemId = bestId;
+    }
+
+    const totalOwned = ownedFigures.length;
+    const completionBase = totalOwned + wishlistCount;
+    const completionPercent =
+      completionBase > 0 ? (totalOwned / completionBase) * 100 : 0;
+
+    return jsonResponse({
+      range: rangeParam,
+      summary: {
+        total_figures_owned: totalOwned,
+        completion_percent: completionPercent,
+        estimated_value: estimatedValue,
+        value_change_percent: valueChangePercent,
+        rarest_item_user_figure_id: rarestItemId,
+      },
+    });
+  }
+
+  if (path === "/v1/analytics/distribution" && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const rangeParam = url.searchParams.get("range");
+    const byParam = url.searchParams.get("by");
+    if (!isAnalyticsRange(rangeParam) || byParam !== "era") {
+      return jsonResponse({ message: "Invalid analytics query." }, 400);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    const rangeStart = getRangeStart(rangeParam);
+    let ownedFigures: OwnedFigureRow[] = [];
+    try {
+      ownedFigures = await fetchOwnedFigures(supabase, user.id, rangeStart);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to load figures." },
+        500
+      );
+    }
+
+    const buckets: Record<string, number> = {};
+    for (const figure of ownedFigures) {
+      const era = figure.figures?.era ? String(figure.figures.era) : "OTHER";
+      buckets[era] = (buckets[era] ?? 0) + 1;
+    }
+
+    return jsonResponse({
+      range: rangeParam,
+      by: "era",
+      buckets,
+    });
+  }
+
+  if (path === "/v1/analytics/value-series" && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const rangeParam = url.searchParams.get("range");
+    if (!isAnalyticsRange(rangeParam)) {
+      return jsonResponse({ message: "Invalid range." }, 400);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    const rangeStart = getRangeStart(rangeParam);
+    let ownedFigures: OwnedFigureRow[] = [];
+    try {
+      ownedFigures = await fetchOwnedFigures(supabase, user.id, rangeStart);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to load figures." },
+        500
+      );
+    }
+
+    const figureIds = [
+      ...new Set(
+        ownedFigures.map((figure) => figure.figure_id).filter(Boolean) as string[]
+      ),
+    ];
+
+    let listings = [] as Awaited<ReturnType<typeof fetchListings>>;
+    try {
+      listings = await fetchListings(supabase, figureIds);
+    } catch (error) {
+      return jsonResponse(
+        { message: error instanceof Error ? error.message : "Failed to load pricing." },
+        500
+      );
+    }
+
+    const listingPrices = new Map<string, number[]>();
+    for (const listing of listings) {
+      const price = toNumber(listing.current_price);
+      if (price === null) continue;
+      const prices = listingPrices.get(listing.figure_id) ?? [];
+      prices.push(price);
+      listingPrices.set(listing.figure_id, prices);
+    }
+
+    const dailyTotals = new Map<string, number>();
+    for (const figure of ownedFigures) {
+      const createdAt = new Date(figure.created_at);
+      const bucket = getBucketDate(createdAt, rangeParam);
+      let value = 0;
+      if (figure.figure_id && listingPrices.has(figure.figure_id)) {
+        const prices = listingPrices.get(figure.figure_id) ?? [];
+        value = prices.length ? Math.max(...prices) : 0;
+      } else {
+        const purchasePrice = toNumber(figure.purchase_price);
+        value = purchasePrice ?? 0;
+      }
+      dailyTotals.set(bucket, (dailyTotals.get(bucket) ?? 0) + value);
+    }
+
+    const sortedDates = [...dailyTotals.keys()].sort();
+    const points: { date: string; value: number }[] = [];
+    let runningTotal = 0;
+    for (const date of sortedDates) {
+      runningTotal += dailyTotals.get(date) ?? 0;
+      points.push({ date, value: runningTotal });
+    }
+
+    return jsonResponse({
+      range: rangeParam,
+      points,
+    });
   }
 
   if (path === "/v1/goals/active/progress" && req.method === "GET") {
