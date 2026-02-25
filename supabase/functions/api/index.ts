@@ -590,12 +590,22 @@ function normalizeUserFigure(row: Record<string, unknown> | null) {
 }
 
 const ANALYTICS_RANGES = ["all_time", "year", "30d"] as const;
+const ANALYTICS_DISTRIBUTION_BY = ["era", "series", "faction"] as const;
 const NIL_UUID = "00000000-0000-0000-0000-000000000000";
 
 type AnalyticsRange = (typeof ANALYTICS_RANGES)[number];
+type AnalyticsDistributionBy = (typeof ANALYTICS_DISTRIBUTION_BY)[number];
 
 function isAnalyticsRange(value: unknown): value is AnalyticsRange {
   return typeof value === "string" && ANALYTICS_RANGES.includes(value as any);
+}
+
+function isAnalyticsDistributionBy(
+  value: unknown
+): value is AnalyticsDistributionBy {
+  return (
+    typeof value === "string" && ANALYTICS_DISTRIBUTION_BY.includes(value as any)
+  );
 }
 
 function addDays(date: Date, days: number) {
@@ -642,6 +652,76 @@ function toNumber(value: unknown) {
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+type ListingMeta = {
+  allPrices: number[];
+  inStockPrices: number[];
+  listingIds: string[];
+  total: number;
+  inStock: number;
+};
+
+function buildListingMeta(
+  listings: {
+    id: string;
+    figure_id: string;
+    current_price: number | string | null;
+    in_stock: boolean | null;
+  }[]
+) {
+  const listingMeta = new Map<string, ListingMeta>();
+  for (const listing of listings) {
+    const price = toNumber(listing.current_price);
+    const entry = listingMeta.get(listing.figure_id) ?? {
+      allPrices: [],
+      inStockPrices: [],
+      listingIds: [],
+      total: 0,
+      inStock: 0,
+    };
+    entry.total += 1;
+    if (listing.in_stock) {
+      entry.inStock += 1;
+    }
+    if (price !== null) {
+      entry.allPrices.push(price);
+      if (listing.in_stock) {
+        entry.inStockPrices.push(price);
+      }
+    }
+    entry.listingIds.push(listing.id);
+    listingMeta.set(listing.figure_id, entry);
+  }
+  return listingMeta;
+}
+
+function selectBestListingPrice(entry?: ListingMeta) {
+  if (!entry) {
+    return null;
+  }
+  const prices = entry.inStockPrices.length ? entry.inStockPrices : entry.allPrices;
+  if (!prices.length) {
+    return null;
+  }
+  return Math.min(...prices);
+}
+
+function getFigureValue(
+  figure: OwnedFigureRow,
+  listingMeta: Map<string, ListingMeta>
+) {
+  if (figure.figure_id) {
+    const price = selectBestListingPrice(listingMeta.get(figure.figure_id));
+    if (price !== null) {
+      return { value: price, hasValue: true };
+    }
+  }
+  const purchasePrice = toNumber(figure.purchase_price);
+  if (purchasePrice !== null) {
+    return { value: purchasePrice, hasValue: true };
+  }
+  return { value: 0, hasValue: false };
 }
 
 function isGoalProgressRule(value: unknown): value is (typeof GOAL_PROGRESS_RULES)[number] {
@@ -839,6 +919,7 @@ type OwnedFigureRow = {
     release_year?: number | null;
     exclusivity?: string | null;
     name?: string | null;
+    faction?: string | null;
     series?: string | null;
   } | null;
 };
@@ -852,7 +933,7 @@ async function fetchOwnedFigures(
   let query = supabase
     .from("user_figures")
     .select(
-      "id,figure_id,created_at,purchase_price,figures(era,release_year,exclusivity,name,series)"
+      "id,figure_id,created_at,purchase_price,figures(era,release_year,exclusivity,name,series,faction)"
     )
     .eq("user_id", userId)
     .eq("status", "OWNED")
@@ -1583,51 +1664,11 @@ serve(async (req) => {
       );
     }
 
-    const listingMeta = new Map<
-      string,
-      { allPrices: number[]; inStockPrices: number[]; listingIds: string[]; total: number; inStock: number }
-    >();
-    for (const listing of listings) {
-      const price = toNumber(listing.current_price);
-      const entry = listingMeta.get(listing.figure_id) ?? {
-        allPrices: [],
-        inStockPrices: [],
-        listingIds: [],
-        total: 0,
-        inStock: 0,
-      };
-      entry.total += 1;
-      if (listing.in_stock) {
-        entry.inStock += 1;
-      }
-      if (price !== null) {
-        entry.allPrices.push(price);
-        if (listing.in_stock) {
-          entry.inStockPrices.push(price);
-        }
-      }
-      entry.listingIds.push(listing.id);
-      listingMeta.set(listing.figure_id, entry);
-    }
-
-    const valueByFigureId = new Map<string, number>();
-    for (const [figureId, entry] of listingMeta.entries()) {
-      const prices = entry.inStockPrices.length ? entry.inStockPrices : entry.allPrices;
-      if (prices.length) {
-        valueByFigureId.set(figureId, Math.max(...prices));
-      }
-    }
+    const listingMeta = buildListingMeta(listings);
 
     let estimatedValue = 0;
     for (const figure of ownedFigures) {
-      let value = 0;
-      if (figure.figure_id && valueByFigureId.has(figure.figure_id)) {
-        value = valueByFigureId.get(figure.figure_id) ?? 0;
-      } else {
-        const purchasePrice = toNumber(figure.purchase_price);
-        value = purchasePrice ?? 0;
-      }
-      estimatedValue += value;
+      estimatedValue += getFigureValue(figure, listingMeta).value;
     }
 
     let valueChangePercent = 0;
@@ -1660,26 +1701,10 @@ serve(async (req) => {
           priorListings = [];
         }
 
-        const priorListingMeta = new Map<string, number[]>();
-        for (const listing of priorListings) {
-          const price = toNumber(listing.current_price);
-          if (price === null) continue;
-          const prices = priorListingMeta.get(listing.figure_id) ?? [];
-          prices.push(price);
-          priorListingMeta.set(listing.figure_id, prices);
-        }
-
+        const priorListingMeta = buildListingMeta(priorListings);
         let priorValue = 0;
         for (const figure of priorFigures) {
-          let value = 0;
-          if (figure.figure_id && priorListingMeta.has(figure.figure_id)) {
-            const prices = priorListingMeta.get(figure.figure_id) ?? [];
-            value = prices.length ? Math.max(...prices) : 0;
-          } else {
-            const purchasePrice = toNumber(figure.purchase_price);
-            value = purchasePrice ?? 0;
-          }
-          priorValue += value;
+          priorValue += getFigureValue(figure, priorListingMeta).value;
         }
 
         if (priorValue > 0) {
@@ -1791,7 +1816,7 @@ serve(async (req) => {
 
     const rangeParam = url.searchParams.get("range");
     const byParam = url.searchParams.get("by");
-    if (!isAnalyticsRange(rangeParam) || byParam !== "era") {
+    if (!isAnalyticsRange(rangeParam) || !isAnalyticsDistributionBy(byParam)) {
       return jsonResponse({ message: "Invalid analytics query." }, 400);
     }
 
@@ -1815,13 +1840,20 @@ serve(async (req) => {
 
     const buckets: Record<string, number> = {};
     for (const figure of ownedFigures) {
-      const era = figure.figures?.era ? String(figure.figures.era) : "OTHER";
-      buckets[era] = (buckets[era] ?? 0) + 1;
+      let key = "UNKNOWN";
+      if (byParam === "era") {
+        key = figure.figures?.era ? String(figure.figures.era) : "OTHER";
+      } else if (byParam === "series") {
+        key = figure.figures?.series ? String(figure.figures.series) : "UNKNOWN";
+      } else if (byParam === "faction") {
+        key = figure.figures?.faction ? String(figure.figures.faction) : "UNKNOWN";
+      }
+      buckets[key] = (buckets[key] ?? 0) + 1;
     }
 
     return jsonResponse({
       range: rangeParam,
-      by: "era",
+      by: byParam,
       buckets,
     });
   }
@@ -1872,36 +1904,28 @@ serve(async (req) => {
       );
     }
 
-    const listingPrices = new Map<string, number[]>();
-    for (const listing of listings) {
-      const price = toNumber(listing.current_price);
-      if (price === null) continue;
-      const prices = listingPrices.get(listing.figure_id) ?? [];
-      prices.push(price);
-      listingPrices.set(listing.figure_id, prices);
-    }
+    const listingMeta = buildListingMeta(listings);
 
     const dailyTotals = new Map<string, number>();
+    let hasAnyValue = false;
     for (const figure of ownedFigures) {
       const createdAt = new Date(figure.created_at);
       const bucket = getBucketDate(createdAt, rangeParam);
-      let value = 0;
-      if (figure.figure_id && listingPrices.has(figure.figure_id)) {
-        const prices = listingPrices.get(figure.figure_id) ?? [];
-        value = prices.length ? Math.max(...prices) : 0;
-      } else {
-        const purchasePrice = toNumber(figure.purchase_price);
-        value = purchasePrice ?? 0;
+      const { value, hasValue } = getFigureValue(figure, listingMeta);
+      if (hasValue) {
+        hasAnyValue = true;
+        dailyTotals.set(bucket, (dailyTotals.get(bucket) ?? 0) + value);
       }
-      dailyTotals.set(bucket, (dailyTotals.get(bucket) ?? 0) + value);
     }
 
-    const sortedDates = [...dailyTotals.keys()].sort();
     const points: { date: string; value: number }[] = [];
-    let runningTotal = 0;
-    for (const date of sortedDates) {
-      runningTotal += dailyTotals.get(date) ?? 0;
-      points.push({ date, value: runningTotal });
+    if (hasAnyValue) {
+      const sortedDates = [...dailyTotals.keys()].sort();
+      let runningTotal = 0;
+      for (const date of sortedDates) {
+        runningTotal += dailyTotals.get(date) ?? 0;
+        points.push({ date, value: runningTotal });
+      }
     }
 
     return jsonResponse({
