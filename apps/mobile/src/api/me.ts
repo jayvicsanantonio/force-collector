@@ -5,7 +5,8 @@ import { apiRequest } from "./client";
 import { queryKeys } from "./queryKeys";
 import { queryClient } from "./queryClient";
 
-export function useMe() {
+export function useMe(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   return useQuery({
     queryKey: queryKeys.me(),
     queryFn: () =>
@@ -14,7 +15,7 @@ export function useMe() {
         schema: MeResponseSchema,
         auth: "required",
       }),
-    enabled: Boolean(env.API_BASE_URL),
+    enabled: Boolean(env.API_BASE_URL) && enabled,
   });
 }
 

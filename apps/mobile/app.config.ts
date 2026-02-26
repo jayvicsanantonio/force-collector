@@ -23,6 +23,7 @@ const config: ExpoConfig = {
     POSTHOG_KEY: process.env.POSTHOG_KEY ?? "",
     POSTHOG_HOST: process.env.POSTHOG_HOST ?? "",
     OBSERVABILITY_OPT_IN: process.env.OBSERVABILITY_OPT_IN ?? "",
+    PRIVACY_POLICY_URL: process.env.PRIVACY_POLICY_URL ?? "",
   },
 };
 
