@@ -40,6 +40,24 @@ const USER_FIGURE_STATUSES = ["OWNED", "WISHLIST", "PREORDER", "SOLD"] as const;
 const USER_FIGURE_CONDITIONS = ["MINT", "OPENED", "LOOSE", "UNKNOWN"] as const;
 const GOAL_PROGRESS_RULES = ["OWNED_COUNT"] as const;
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const ACHIEVEMENT_KEY_ORDER = [
+  "first_scan",
+  "ten_owned",
+  "wave_complete",
+  "first_price_alert",
+] as const;
+
+// Unlock rules:
+// - first_scan: own >= 1 figure
+// - ten_owned: own >= 10 figures
+// - wave_complete: own every figure in any catalog wave
+// - first_price_alert: create >= 1 price alert
+const ACHIEVEMENT_XP_REWARDS: Record<string, number> = {
+  first_scan: 100,
+  ten_owned: 300,
+  wave_complete: 500,
+  first_price_alert: 150,
+};
 
 type ScanLookupResult = {
   match: Record<string, unknown> | null;
@@ -525,6 +543,179 @@ async function requireUser(supabase: AuthedSupabase) {
     return { user: null, error: error ?? new Error("Unauthorized") };
   }
   return { user, error: null };
+}
+
+function getDefaultDisplayName(email: string | null | undefined) {
+  const localPart = (email ?? "").split("@")[0]?.trim();
+  if (localPart) {
+    return localPart.slice(0, 40);
+  }
+  return "Collector";
+}
+
+function xpRequiredForNextLevel(level: number) {
+  return 100 + (level - 1) * 75;
+}
+
+function computeProgression(totalXp: number) {
+  let level = 1;
+  let currentLevelTotalXp = 0;
+  let xpForNextLevel = xpRequiredForNextLevel(level);
+
+  while (totalXp >= currentLevelTotalXp + xpForNextLevel) {
+    currentLevelTotalXp += xpForNextLevel;
+    level += 1;
+    xpForNextLevel = xpRequiredForNextLevel(level);
+    if (level >= 1000) {
+      break;
+    }
+  }
+
+  return {
+    level,
+    total_xp: totalXp,
+    xp_in_level: totalXp - currentLevelTotalXp,
+    xp_for_next_level: xpForNextLevel,
+    current_level_total_xp: currentLevelTotalXp,
+    next_level_total_xp: currentLevelTotalXp + xpForNextLevel,
+  };
+}
+
+type AchievementRuleMetrics = {
+  ownedCount: number;
+  priceAlertCount: number;
+  hasCompletedWave: boolean;
+};
+
+type AchievementProgress = {
+  progress_current: number;
+  progress_target: number;
+  progress_label: string;
+  unlocked: boolean;
+};
+
+function getAchievementProgress(
+  key: string,
+  metrics: AchievementRuleMetrics
+): AchievementProgress {
+  if (key === "first_scan") {
+    const current = Math.min(metrics.ownedCount, 1);
+    return {
+      progress_current: current,
+      progress_target: 1,
+      progress_label: `${current}/1`,
+      unlocked: current >= 1,
+    };
+  }
+  if (key === "ten_owned") {
+    const current = Math.min(metrics.ownedCount, 10);
+    return {
+      progress_current: current,
+      progress_target: 10,
+      progress_label: `${current}/10 owned`,
+      unlocked: metrics.ownedCount >= 10,
+    };
+  }
+  if (key === "wave_complete") {
+    const current = metrics.hasCompletedWave ? 1 : 0;
+    return {
+      progress_current: current,
+      progress_target: 1,
+      progress_label: metrics.hasCompletedWave ? "Completed" : "In progress",
+      unlocked: metrics.hasCompletedWave,
+    };
+  }
+  if (key === "first_price_alert") {
+    const current = Math.min(metrics.priceAlertCount, 1);
+    return {
+      progress_current: current,
+      progress_target: 1,
+      progress_label: `${current}/1`,
+      unlocked: current >= 1,
+    };
+  }
+  return {
+    progress_current: 0,
+    progress_target: 1,
+    progress_label: "Locked",
+    unlocked: false,
+  };
+}
+
+async function hasCompletedAnyWave(
+  supabase: AuthedSupabase,
+  userId: string
+): Promise<boolean> {
+  const { data: ownedRows, error: ownedError } = await supabase
+    .from("user_figures")
+    .select("figure_id")
+    .eq("user_id", userId)
+    .eq("status", "OWNED")
+    .not("figure_id", "is", null);
+  if (ownedError) {
+    throw ownedError;
+  }
+
+  const ownedFigureIds = [
+    ...new Set(
+      (ownedRows ?? [])
+        .map((row) => (typeof row.figure_id === "string" ? row.figure_id : null))
+        .filter(Boolean) as string[]
+    ),
+  ];
+  if (!ownedFigureIds.length) {
+    return false;
+  }
+
+  const { data: ownedFigures, error: ownedFiguresError } = await supabase
+    .from("figures")
+    .select("id,wave")
+    .in("id", ownedFigureIds);
+  if (ownedFiguresError) {
+    throw ownedFiguresError;
+  }
+
+  const ownedByWave = new Map<string, Set<string>>();
+  for (const figure of ownedFigures ?? []) {
+    const wave = typeof figure.wave === "string" ? figure.wave.trim() : "";
+    const id = typeof figure.id === "string" ? figure.id : "";
+    if (!wave || !id) {
+      continue;
+    }
+    const waveSet = ownedByWave.get(wave) ?? new Set<string>();
+    waveSet.add(id);
+    ownedByWave.set(wave, waveSet);
+  }
+
+  const candidateWaves = [...ownedByWave.keys()];
+  if (!candidateWaves.length) {
+    return false;
+  }
+
+  const { data: waveFigures, error: waveFiguresError } = await supabase
+    .from("figures")
+    .select("id,wave")
+    .in("wave", candidateWaves);
+  if (waveFiguresError) {
+    throw waveFiguresError;
+  }
+
+  const totalByWave = new Map<string, number>();
+  for (const figure of waveFigures ?? []) {
+    const wave = typeof figure.wave === "string" ? figure.wave.trim() : "";
+    if (!wave) {
+      continue;
+    }
+    totalByWave.set(wave, (totalByWave.get(wave) ?? 0) + 1);
+  }
+
+  for (const [wave, owned] of ownedByWave.entries()) {
+    const total = totalByWave.get(wave) ?? 0;
+    if (total > 0 && owned.size >= total) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function isUserFigureStatus(value: unknown): value is (typeof USER_FIGURE_STATUSES)[number] {
@@ -1028,6 +1219,300 @@ serve(async (req) => {
 
   const url = new URL(req.url);
   const path = normalizePath(url.pathname);
+
+  if (path === "/v1/me" && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    let { data: profile, error: profileError } = await supabase
+      .from("user_profiles")
+      .select(
+        "user_id,display_name,avatar_url,level,xp,allegiance_theme,preferences"
+      )
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (profileError) {
+      return jsonResponse({ message: profileError.message }, 500);
+    }
+
+    if (!profile) {
+      const record = {
+        user_id: user.id,
+        display_name: getDefaultDisplayName(user.email),
+        allegiance_theme: "LIGHT",
+        preferences: {},
+      };
+      const { data: created, error: createError } = await supabase
+        .from("user_profiles")
+        .insert(record)
+        .select(
+          "user_id,display_name,avatar_url,level,xp,allegiance_theme,preferences"
+        )
+        .maybeSingle();
+      if (createError) {
+        return jsonResponse({ message: createError.message }, 500);
+      }
+      profile = created;
+    }
+
+    const [
+      achievementsResult,
+      ownedCountResult,
+      priceAlertCountResult,
+      completedWaveResult,
+      userAchievementsResult,
+    ] = await Promise.all([
+      supabase
+        .from("achievements")
+        .select("id,key,title,description,icon")
+        .in("key", [...ACHIEVEMENT_KEY_ORDER]),
+      supabase
+        .from("user_figures")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "OWNED"),
+      supabase
+        .from("price_alerts")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", user.id),
+      hasCompletedAnyWave(supabase, user.id),
+      supabase
+        .from("user_achievements")
+        .select("achievement_id,unlocked_at")
+        .eq("user_id", user.id),
+    ]);
+
+    if (achievementsResult.error) {
+      return jsonResponse({ message: achievementsResult.error.message }, 500);
+    }
+    if (ownedCountResult.error) {
+      return jsonResponse({ message: ownedCountResult.error.message }, 500);
+    }
+    if (priceAlertCountResult.error) {
+      return jsonResponse({ message: priceAlertCountResult.error.message }, 500);
+    }
+    if (userAchievementsResult.error) {
+      return jsonResponse({ message: userAchievementsResult.error.message }, 500);
+    }
+
+    const metrics: AchievementRuleMetrics = {
+      ownedCount: ownedCountResult.count ?? 0,
+      priceAlertCount: priceAlertCountResult.count ?? 0,
+      hasCompletedWave: completedWaveResult,
+    };
+
+    const achievementsByKey = new Map<
+      string,
+      { id: string; key: string; title: string; description: string | null; icon: string | null }
+    >();
+    for (const achievement of achievementsResult.data ?? []) {
+      if (
+        typeof achievement.id === "string" &&
+        typeof achievement.key === "string" &&
+        typeof achievement.title === "string"
+      ) {
+        achievementsByKey.set(achievement.key, {
+          id: achievement.id,
+          key: achievement.key,
+          title: achievement.title,
+          description:
+            typeof achievement.description === "string"
+              ? achievement.description
+              : null,
+          icon: typeof achievement.icon === "string" ? achievement.icon : null,
+        });
+      }
+    }
+
+    const priorUnlocks = new Map<string, string>();
+    for (const row of userAchievementsResult.data ?? []) {
+      if (
+        typeof row.achievement_id === "string" &&
+        typeof row.unlocked_at === "string"
+      ) {
+        priorUnlocks.set(row.achievement_id, row.unlocked_at);
+      }
+    }
+
+    const now = new Date().toISOString();
+    const pendingUnlocks: { user_id: string; achievement_id: string; unlocked_at: string }[] = [];
+    const achievements = [] as Array<{
+      id: string;
+      key: string;
+      title: string;
+      description: string;
+      icon: string;
+      unlocked: boolean;
+      unlocked_at: string | null;
+      progress_current: number;
+      progress_target: number;
+      progress_label: string;
+    }>;
+    for (const key of ACHIEVEMENT_KEY_ORDER) {
+      const base = achievementsByKey.get(key);
+      if (!base) {
+        continue;
+      }
+      const progress = getAchievementProgress(key, metrics);
+      const existingUnlockAt = priorUnlocks.get(base.id) ?? null;
+      if (progress.unlocked && !existingUnlockAt) {
+        pendingUnlocks.push({
+          user_id: user.id,
+          achievement_id: base.id,
+          unlocked_at: now,
+        });
+      }
+      achievements.push({
+        ...base,
+        description: base.description ?? "",
+        icon: base.icon ?? "emoji-events",
+        unlocked: progress.unlocked || Boolean(existingUnlockAt),
+        unlocked_at: existingUnlockAt ?? (progress.unlocked ? now : null),
+        progress_current: progress.progress_current,
+        progress_target: progress.progress_target,
+        progress_label: progress.progress_label,
+      });
+    }
+
+    if (pendingUnlocks.length) {
+      const { error: unlockError } = await supabase
+        .from("user_achievements")
+        .upsert(pendingUnlocks, {
+          onConflict: "user_id,achievement_id",
+          ignoreDuplicates: true,
+        });
+      if (unlockError) {
+        return jsonResponse({ message: unlockError.message }, 500);
+      }
+    }
+
+    let totalXp = metrics.ownedCount * 25;
+    for (const item of achievements) {
+      if (item.unlocked) {
+        totalXp += ACHIEVEMENT_XP_REWARDS[item.key] ?? 0;
+      }
+    }
+    const progression = computeProgression(totalXp);
+
+    const responseProfile = {
+      user_id: String(profile?.user_id ?? user.id),
+      display_name:
+        typeof profile?.display_name === "string" && profile.display_name.trim()
+          ? profile.display_name
+          : getDefaultDisplayName(user.email),
+      avatar_url:
+        typeof profile?.avatar_url === "string" ? profile.avatar_url : undefined,
+      level: progression.level,
+      xp: progression.total_xp,
+      allegiance_theme:
+        profile?.allegiance_theme === "DARK" ? "DARK" : "LIGHT",
+      preferences:
+        profile?.preferences && typeof profile.preferences === "object"
+          ? (profile.preferences as Record<string, unknown>)
+          : {},
+    };
+
+    return jsonResponse({
+      user: {
+        id: user.id,
+        email: user.email ?? undefined,
+        created_at: user.created_at,
+      },
+      profile: responseProfile,
+      achievements: {
+        items: achievements,
+        unlocked_count: achievements.filter((item) => item.unlocked).length,
+        total_count: achievements.length,
+      },
+      progression,
+    });
+  }
+
+  if (path === "/v1/me" && req.method === "PATCH") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    let payload: Record<string, unknown> | null = null;
+    try {
+      payload = await req.json();
+    } catch {
+      return jsonResponse({ message: "Invalid JSON body." }, 400);
+    }
+    if (!payload || Array.isArray(payload)) {
+      return jsonResponse({ message: "Invalid JSON body." }, 400);
+    }
+
+    const updates: Record<string, unknown> = {};
+    if ("display_name" in payload) {
+      if (payload.display_name !== null && typeof payload.display_name !== "string") {
+        return jsonResponse({ message: "Invalid display_name." }, 400);
+      }
+      updates.display_name =
+        typeof payload.display_name === "string" ? payload.display_name.trim() : null;
+    }
+    if ("avatar_url" in payload) {
+      if (payload.avatar_url !== null && typeof payload.avatar_url !== "string") {
+        return jsonResponse({ message: "Invalid avatar_url." }, 400);
+      }
+      updates.avatar_url = payload.avatar_url ?? null;
+    }
+    if ("allegiance_theme" in payload) {
+      if (payload.allegiance_theme !== "LIGHT" && payload.allegiance_theme !== "DARK") {
+        return jsonResponse({ message: "Invalid allegiance_theme." }, 400);
+      }
+      updates.allegiance_theme = payload.allegiance_theme;
+    }
+    if ("preferences" in payload) {
+      if (
+        payload.preferences === null ||
+        typeof payload.preferences !== "object" ||
+        Array.isArray(payload.preferences)
+      ) {
+        return jsonResponse({ message: "Invalid preferences." }, 400);
+      }
+      updates.preferences = payload.preferences;
+    }
+
+    if (!Object.keys(updates).length) {
+      return jsonResponse({ message: "No valid fields to update." }, 400);
+    }
+
+    const { error: updateError } = await supabase
+      .from("user_profiles")
+      .upsert(
+        {
+          user_id: user.id,
+          ...updates,
+        },
+        { onConflict: "user_id" }
+      );
+    if (updateError) {
+      return jsonResponse({ message: updateError.message }, 500);
+    }
+
+    return jsonResponse({ success: true });
+  }
 
   if (path === "/v1/figures" && req.method === "GET") {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");

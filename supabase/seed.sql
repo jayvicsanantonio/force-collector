@@ -43,6 +43,8 @@ insert into public.figures (
 
 insert into public.achievements (key, title, description, icon)
 values
-  ('first-figure', 'First Figure', 'Add your first figure to the collection.', 'trophy'),
-  ('wishlist-starter', 'Wishlist Starter', 'Add your first wishlist item.', 'star')
+  ('first_scan', 'First Scan', 'Log your first owned figure.', 'qr-code-scanner'),
+  ('ten_owned', 'Collector I', 'Own 10 figures.', 'inventory-2'),
+  ('wave_complete', 'Wave Hunter', 'Complete any figure wave.', 'emoji-events'),
+  ('first_price_alert', 'Price Sentinel', 'Create your first price alert.', 'notifications-active')
 on conflict (key) do nothing;
