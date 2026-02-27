@@ -121,7 +121,7 @@ export default function HomeScreen() {
             <Pressable
               onPress={() => {
                 track("dashboard_settings_tapped");
-                router.push("/profile/settings");
+                router.push("/profile");
               }}
               accessibilityLabel="Open settings"
               className="h-10 w-10 items-center justify-center rounded-full border border-hud-line/70 bg-raised-surface/70"

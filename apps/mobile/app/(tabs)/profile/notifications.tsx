@@ -1,20 +1,11 @@
-import {
-  Alert,
-  Pressable,
-  StyleSheet,
-  Switch,
-  Text,
-  View,
-} from "react-native";
-import { router } from "expo-router";
+import { Alert, StyleSheet, Switch, Text, View } from "react-native";
 import PlaceholderScreen from "../../../src/PlaceholderScreen";
-import { signOutAndClearUserData } from "../../../src/offline/session";
-import { captureError, track } from "../../../src/observability";
+import { track } from "../../../src/observability";
 import { useMe, useUpdateMe } from "../../../src/api/me";
-import { useAuth } from "../../../src/auth/AuthProvider";
 import * as Notifications from "expo-notifications";
 import { hasPushPermission, registerPushTokenIfNeeded } from "../../../src/notifications/push";
 import { useEffect, useState } from "react";
+import { useAuth } from "../../../src/auth/AuthProvider";
 
 const defaultNotificationPrefs = {
   price_drop: true,
@@ -22,7 +13,7 @@ const defaultNotificationPrefs = {
   new_drop: true,
 };
 
-export default function SettingsScreen() {
+export default function NotificationsScreen() {
   const { user } = useAuth();
   const { data } = useMe();
   const updateMe = useUpdateMe();
@@ -94,14 +85,11 @@ export default function SettingsScreen() {
 
   return (
     <PlaceholderScreen
-      title="Settings"
-      description="Manage notifications, account, and privacy settings."
+      title="Notifications"
+      description="Choose which alerts you want to receive."
     >
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Notifications</Text>
-        <Text style={styles.cardText}>
-          Choose which alerts you want to receive.
-        </Text>
         <View style={styles.toggleRow}>
           <Text style={styles.toggleLabel}>Price drops</Text>
           <Switch
@@ -136,48 +124,6 @@ export default function SettingsScreen() {
           />
         </View>
       </View>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Account</Text>
-        <Text style={styles.cardText}>
-          Signing out clears cached data and secure tokens on this device.
-        </Text>
-        <Pressable
-          style={styles.button}
-          onPress={async () => {
-            track("profile_sign_out");
-            try {
-              await signOutAndClearUserData();
-              router.replace("/");
-            } catch (error) {
-              captureError(error, { source: "settings", action: "sign_out" });
-            }
-          }}
-        >
-          <Text style={styles.buttonText}>Sign out</Text>
-        </Pressable>
-      </View>
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Observability</Text>
-        <Text style={styles.cardText}>
-          Send a test event or error to verify analytics/crash reporting.
-        </Text>
-        <Pressable
-          style={styles.button}
-          onPress={() => track("test_event", { source: "settings" })}
-        >
-          <Text style={styles.buttonText}>Send Test Event</Text>
-        </Pressable>
-        <Pressable
-          style={styles.button}
-          onPress={() =>
-            captureError(new Error("Test error from Settings"), {
-              source: "settings",
-            })
-          }
-        >
-          <Text style={styles.buttonText}>Send Test Error</Text>
-        </Pressable>
-      </View>
     </PlaceholderScreen>
   );
 }
@@ -197,11 +143,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1,
   },
-  cardText: {
-    marginTop: 8,
-    color: "#e6f0ff",
-    fontSize: 13,
-  },
   toggleRow: {
     marginTop: 12,
     paddingVertical: 8,
@@ -218,20 +159,5 @@ const styles = StyleSheet.create({
     color: "#e6f0ff",
     fontSize: 13,
     fontWeight: "600",
-  },
-  button: {
-    marginTop: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 10,
-    backgroundColor: "#1c2a3d",
-    borderWidth: 1,
-    borderColor: "#2f4566",
-  },
-  buttonText: {
-    color: "#e6f0ff",
-    fontSize: 13,
-    fontWeight: "600",
-    textAlign: "center",
   },
 });
