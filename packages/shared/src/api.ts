@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  AchievementSchema,
   CollectionSummarySchema,
   DistributionBreakdownSchema,
   FigureSchema,
@@ -30,6 +31,27 @@ export type AnalyticsDistributionBy = z.infer<typeof AnalyticsDistributionBySche
 export const MeResponseSchema = z.object({
   user: UserSchema,
   profile: UserProfileSchema,
+  achievements: z.object({
+    items: z.array(
+      AchievementSchema.extend({
+        unlocked: z.boolean(),
+        unlocked_at: z.string().datetime().nullable(),
+        progress_current: z.number().int().nonnegative(),
+        progress_target: z.number().int().positive(),
+        progress_label: z.string(),
+      })
+    ),
+    unlocked_count: z.number().int().nonnegative(),
+    total_count: z.number().int().nonnegative(),
+  }),
+  progression: z.object({
+    level: z.number().int().min(1),
+    total_xp: z.number().int().nonnegative(),
+    xp_in_level: z.number().int().nonnegative(),
+    xp_for_next_level: z.number().int().positive(),
+    current_level_total_xp: z.number().int().nonnegative(),
+    next_level_total_xp: z.number().int().positive(),
+  }),
 });
 export type MeResponse = z.infer<typeof MeResponseSchema>;
 

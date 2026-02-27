@@ -26,33 +26,6 @@ const PRIVACY_POLICY_URL =
   Constants.expoConfig?.extra?.PRIVACY_POLICY_URL ??
   "https://force-collector.app/privacy";
 
-const ACHIEVEMENTS = [
-  {
-    key: "first_scan",
-    title: "First Scan",
-    description: "Logged your first figure.",
-    icon: "qr-code-scanner" as const,
-  },
-  {
-    key: "holocron_keeper",
-    title: "Holocron Keeper",
-    description: "Cataloged 25 collectibles.",
-    icon: "auto-awesome" as const,
-  },
-  {
-    key: "fleet_commander",
-    title: "Fleet Commander",
-    description: "Tracked 5 rare variants.",
-    icon: "shield" as const,
-  },
-  {
-    key: "master_collector",
-    title: "Master Collector",
-    description: "Completed a wave.",
-    icon: "emoji-events" as const,
-  },
-];
-
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) {
@@ -87,17 +60,18 @@ export default function ProfileScreen() {
   const profile = data?.profile;
   const displayName = profile?.display_name ?? "Collector";
   const avatarUrl = profile?.avatar_url;
-  const level = profile?.level ?? 1;
-  const xp = profile?.xp ?? 0;
-  const levelTarget = Math.max(1000, (level + 1) * 1000);
-  const progress = Math.min(1, levelTarget ? xp / levelTarget : 0);
+  const progression = data?.progression;
+  const level = progression?.level ?? profile?.level ?? 1;
+  const totalXp = progression?.total_xp ?? profile?.xp ?? 0;
+  const xpInLevel = progression?.xp_in_level ?? totalXp;
+  const xpForNextLevel = progression?.xp_for_next_level ?? Math.max(1, totalXp || 1);
+  const progress = Math.min(1, xpForNextLevel ? xpInLevel / xpForNextLevel : 0);
   const rankLabel = getRankLabel(level);
   const appVersion = Constants.expoConfig?.version ?? "0.0.0";
 
   const unlockedAchievements = useMemo(() => {
-    const unlockCount = Math.max(1, Math.min(ACHIEVEMENTS.length, Math.floor(level / 5)));
-    return ACHIEVEMENTS.slice(0, unlockCount);
-  }, [level]);
+    return (data?.achievements.items ?? []).filter((achievement) => achievement.unlocked);
+  }, [data?.achievements.items]);
 
   const handleAllegianceToggle = () => {
     const next = allegiance === "light" ? "dark" : "light";
@@ -138,7 +112,7 @@ export default function ProfileScreen() {
                   {displayName}
                 </Text>
                 <Text className="text-xs font-space-medium text-secondary-text">
-                  Level {level} • {xp} XP
+                  Level {level} • {totalXp} XP
                 </Text>
                 {isLoading ? (
                   <Text className="mt-1 text-[11px] text-secondary-text">
@@ -162,7 +136,7 @@ export default function ProfileScreen() {
                   XP Progress
                 </Text>
                 <Text className="text-xs font-space-semibold text-secondary-text">
-                  {xp} / {levelTarget}
+                  {xpInLevel} / {xpForNextLevel}
                 </Text>
               </View>
               <View className="mt-2 h-2 overflow-hidden rounded-full bg-hud-surface">
@@ -194,7 +168,7 @@ export default function ProfileScreen() {
                 >
                   <View className="mb-2 flex-row items-center gap-2">
                     <View className={cx("h-8 w-8 items-center justify-center rounded-full", accentBgClass)}>
-                      <MaterialIcons name={achievement.icon} size={16} color="#f8fafc" />
+                      <MaterialIcons name={achievement.icon as never} size={16} color="#f8fafc" />
                     </View>
                     <Text className="flex-1 text-xs font-space-semibold text-frost-text">
                       {achievement.title}
@@ -205,6 +179,16 @@ export default function ProfileScreen() {
                   </Text>
                 </View>
               ))}
+              {!unlockedAchievements.length ? (
+                <View className="w-44 rounded-2xl border border-hud-line/60 bg-profile-panel p-3">
+                  <Text className="text-xs font-space-semibold text-frost-text">
+                    No unlocks yet
+                  </Text>
+                  <Text className="mt-2 text-[11px] text-secondary-text">
+                    Add your first owned figure to unlock First Scan.
+                  </Text>
+                </View>
+              ) : null}
             </ScrollView>
           </View>
 
