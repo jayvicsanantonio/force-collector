@@ -7,7 +7,7 @@ export default function ProfileLayout() {
       <Stack.Screen name="notifications" options={{ title: "Notifications" }} />
       <Stack.Screen name="account" options={{ title: "Account Details" }} />
       <Stack.Screen name="achievements" options={{ title: "Achievements" }} />
-      <Stack.Screen name="data" options={{ title: "Data Export" }} />
+      <Stack.Screen name="data" options={{ title: "Data Export & Import" }} />
     </Stack>
   );
 }
