@@ -1,6 +1,6 @@
 import * as WebBrowser from "expo-web-browser";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -247,21 +247,24 @@ export default function WishlistScreen() {
     return sorted;
   }, [filteredData, activeSort]);
 
-  const openAlertSheet = (item: CachedFigure) => {
-    const existing = configuredAlerts[item.id];
-    setAlertTargetPrice(
-      existing?.targetPrice?.toFixed(2) ??
-        (item.lastPrice ? item.lastPrice.toFixed(2) : "")
-    );
-    setAlertRetailers(existing?.retailers ?? getRetailers(item));
-    setAlertNotifyRestock(existing?.notifyOnRestock ?? true);
-    setAlertItem(item);
-    track("wishlist_price_alert_configured");
-  };
+  const openAlertSheet = useCallback(
+    (item: CachedFigure) => {
+      const existing = configuredAlerts[item.id];
+      setAlertTargetPrice(
+        existing?.targetPrice?.toFixed(2) ??
+          (item.lastPrice ? item.lastPrice.toFixed(2) : "")
+      );
+      setAlertRetailers(existing?.retailers ?? getRetailers(item));
+      setAlertNotifyRestock(existing?.notifyOnRestock ?? true);
+      setAlertItem(item);
+      track("wishlist_price_alert_configured");
+    },
+    [configuredAlerts]
+  );
 
-  const closeAlertSheet = () => setAlertItem(null);
+  const closeAlertSheet = useCallback(() => setAlertItem(null), []);
 
-  const saveAlert = () => {
+  const saveAlert = useCallback(() => {
     if (!alertItem) return;
     const parsedTarget = Number.parseFloat(alertTargetPrice);
     const resolvedRetailers =
@@ -275,9 +278,15 @@ export default function WishlistScreen() {
       },
     }));
     closeAlertSheet();
-  };
+  }, [
+    alertItem,
+    alertNotifyRestock,
+    alertRetailers,
+    alertTargetPrice,
+    closeAlertSheet,
+  ]);
 
-  const renderItem = ({ item }: { item: CachedFigure }) => {
+  const renderItem = useCallback(({ item }: { item: CachedFigure }) => {
     const status = getStockStatus(item);
     const statusLabel =
       status === "IN_STOCK"
@@ -322,7 +331,9 @@ export default function WishlistScreen() {
                 ? "border-bright-cyan/60 bg-bright-cyan/20"
                 : "border-hud-line/60 bg-raised-surface/70"
             )}
+            accessibilityRole="button"
             accessibilityLabel="Configure price alert"
+            accessibilityState={{ selected: alertConfigured }}
           >
             <Ionicons
               name={alertConfigured ? "notifications" : "notifications-outline"}
@@ -339,6 +350,7 @@ export default function WishlistScreen() {
                 "text-[10px] font-space-semibold uppercase tracking-widest",
                 statusTextClass
               )}
+              accessibilityLabel={`Status ${statusLabel}`}
             >
               {statusLabel}
             </Text>
@@ -386,6 +398,9 @@ export default function WishlistScreen() {
           <Pressable
             onPress={() => openAlertSheet(item)}
             className="flex-1 items-center justify-center rounded-xl border border-hud-line/60 bg-raised-surface/60 px-4 py-3"
+            accessibilityRole="button"
+            accessibilityLabel={`${alertConfigured ? "Update" : "Set"} alert for ${item.name}`}
+            accessibilityState={{ selected: alertConfigured }}
           >
             <Text className="text-xs font-space-semibold uppercase tracking-widest text-secondary-text">
               {alertConfigured ? "Alert Active" : "Set Alert"}
@@ -394,7 +409,7 @@ export default function WishlistScreen() {
         </View>
       </View>
     );
-  };
+  }, [configuredAlerts, isOnline, openAlertSheet]);
 
   return (
     <View className="flex-1 bg-void">
@@ -408,6 +423,8 @@ export default function WishlistScreen() {
               void syncNow().then(() => refresh());
             }}
             className="rounded-full border border-hud-line/70 bg-raised-surface/60 px-3 py-1"
+            accessibilityRole="button"
+            accessibilityLabel="Sync wishlist"
           >
             <Text className="text-[10px] font-space-semibold uppercase tracking-widest text-secondary-text">
               Sync
@@ -421,6 +438,11 @@ export default function WishlistScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ItemSeparatorComponent={() => <View className="h-3" />}
+        initialNumToRender={8}
+        maxToRenderPerBatch={8}
+        windowSize={7}
+        removeClippedSubviews
+        updateCellsBatchingPeriod={50}
         ListHeaderComponent={
           <View>
             {params.figureId ? (
@@ -446,6 +468,7 @@ export default function WishlistScreen() {
               <View className="mt-2 flex-row flex-wrap gap-2">
                 <Chip
                   label="Exclusives"
+                  accessibilityLabel="Toggle exclusives filter"
                   selected={exclusiveOnly}
                   onPress={() => {
                     track("wishlist_filter_applied");
@@ -454,6 +477,7 @@ export default function WishlistScreen() {
                 />
                 <Chip
                   label={`Retailer: ${activeRetailer}`}
+                  accessibilityLabel={`Change retailer filter. Current ${activeRetailer}`}
                   selected={activeRetailer !== "Any"}
                   onPress={() => {
                     track("wishlist_filter_applied");
@@ -465,6 +489,7 @@ export default function WishlistScreen() {
                 />
                 <Chip
                   label={`Era: ${activeEra}`}
+                  accessibilityLabel={`Change era filter. Current ${activeEra}`}
                   selected={activeEra !== "All"}
                   onPress={() => {
                     track("wishlist_filter_applied");
@@ -476,6 +501,7 @@ export default function WishlistScreen() {
                 />
                 <Chip
                   label={`Series: ${activeSeries}`}
+                  accessibilityLabel={`Change series filter. Current ${activeSeries}`}
                   selected={activeSeries !== "All"}
                   onPress={() => {
                     track("wishlist_filter_applied");
@@ -497,6 +523,7 @@ export default function WishlistScreen() {
                   <Chip
                     key={option.id}
                     label={option.label}
+                    accessibilityLabel={`Sort by ${option.label}`}
                     selected={activeSort === option.id}
                     onPress={() => {
                       track("wishlist_sort_changed");
@@ -533,7 +560,11 @@ export default function WishlistScreen() {
                 <Text className="text-base font-space-semibold text-frost-text">
                   Price Alert
                 </Text>
-                <Pressable onPress={closeAlertSheet}>
+                <Pressable
+                  onPress={closeAlertSheet}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close price alert settings"
+                >
                   <Ionicons name="close" size={20} color="#94a3b8" />
                 </Pressable>
               </View>
@@ -555,6 +586,7 @@ export default function WishlistScreen() {
                     keyboardType="decimal-pad"
                     value={alertTargetPrice}
                     onChangeText={setAlertTargetPrice}
+                    accessibilityLabel="Target price"
                   />
                 </View>
               </View>
@@ -583,6 +615,9 @@ export default function WishlistScreen() {
                             ? "border-bright-cyan/70 bg-bright-cyan/20"
                             : "border-hud-line/60 bg-raised-surface/60"
                         )}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${retailer.label} retailer`}
+                        accessibilityState={{ selected }}
                       >
                         <Text
                           className={cx(
@@ -612,6 +647,7 @@ export default function WishlistScreen() {
                   onValueChange={setAlertNotifyRestock}
                   trackColor={{ false: "#1e293b", true: "#22d3ee" }}
                   thumbColor="#f8fafc"
+                  accessibilityLabel="Notify on restock"
                 />
               </View>
 

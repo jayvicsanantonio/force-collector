@@ -3,7 +3,6 @@ import * as WebBrowser from "expo-web-browser";
 import { router } from "expo-router";
 import { useEffect, useMemo } from "react";
 import {
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,6 +12,7 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Badge } from "../../../src/components/Badge";
+import { AppImage } from "../../../src/components/AppImage";
 import { ScreenHeader } from "../../../src/components/ScreenHeader";
 import { useMe, useUpdateMe } from "../../../src/api/me";
 import type { ApiError } from "../../../src/api/client";
@@ -100,7 +100,13 @@ export default function ProfileScreen() {
             <View className="flex-row items-center gap-4">
               <View className={cx("h-16 w-16 items-center justify-center rounded-2xl border", accentBorderClass)}>
                 {avatarUrl ? (
-                  <Image source={{ uri: avatarUrl }} className="h-16 w-16 rounded-2xl" />
+                  <AppImage
+                    uri={avatarUrl}
+                    style={{ height: 64, width: 64, borderRadius: 16 }}
+                    variant="thumbnail"
+                    accessibilityLabel={`${displayName} profile image`}
+                    placeholderLabel="Avatar unavailable"
+                  />
                 ) : (
                   <Text className="text-lg font-space-bold text-frost-text">
                     {getInitials(displayName)}

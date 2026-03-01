@@ -24,6 +24,8 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        lazy: true,
+        freezeOnBlur: true,
         tabBarStyle: {
           backgroundColor: themeColors.hudSurface,
           borderTopColor: themeColors.hudLine,
@@ -36,6 +38,7 @@ export default function TabsLayout() {
         name="home"
         options={{
           title: "Home",
+          tabBarAccessibilityLabel: "Home tab",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="home" color={color} size={size} />
           ),
@@ -45,6 +48,7 @@ export default function TabsLayout() {
         name="collection"
         options={{
           title: "Collection",
+          tabBarAccessibilityLabel: "Collection tab",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="albums" color={color} size={size} />
           ),
@@ -54,6 +58,7 @@ export default function TabsLayout() {
         name="analytics"
         options={{
           title: "Analytics",
+          tabBarAccessibilityLabel: "Analytics tab",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="stats-chart" color={color} size={size} />
           ),
@@ -63,6 +68,7 @@ export default function TabsLayout() {
         name="wishlist"
         options={{
           title: "Wishlist",
+          tabBarAccessibilityLabel: "Wishlist tab",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="heart" color={color} size={size} />
           ),
@@ -72,6 +78,7 @@ export default function TabsLayout() {
         name="search"
         options={{
           title: "Search",
+          tabBarAccessibilityLabel: "Search tab",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="search" color={color} size={size} />
           ),
@@ -81,6 +88,7 @@ export default function TabsLayout() {
         name="profile"
         options={{
           title: "Profile",
+          tabBarAccessibilityLabel: "Profile tab",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="person" color={color} size={size} />
           ),

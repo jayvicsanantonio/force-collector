@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
-  Image,
   Pressable,
   ScrollView,
   Text,
@@ -19,6 +18,7 @@ import { Badge } from "../../../src/components/Badge";
 import { Card } from "../../../src/components/Card";
 import { ScreenHeader } from "../../../src/components/ScreenHeader";
 import { StatCard } from "../../../src/components/StatCard";
+import { AppImage } from "../../../src/components/AppImage";
 import { useAuth } from "../../../src/auth/AuthProvider";
 import { createUserFigure, updateUserFigureStatus } from "../../../src/api/user-figures";
 import { useOfflineStatus } from "../../../src/offline/OfflineProvider";
@@ -294,6 +294,8 @@ export default function ScanResultsScreen() {
           <Pressable
             onPress={handleScanAgain}
             className="flex-row items-center gap-2 rounded-full border border-hud-line/70 bg-overlay-ink/70 px-3 py-1"
+            accessibilityRole="button"
+            accessibilityLabel="Scan again"
           >
             <MaterialIcons name="qr-code-scanner" size={14} color="#94a3b8" />
             <Text className="text-[10px] font-space-semibold uppercase tracking-widest text-secondary-text">
@@ -331,10 +333,11 @@ export default function ScanResultsScreen() {
           <Card className="gap-4">
             <View className="flex-row items-start gap-4">
               {match.primary_image_url ? (
-                <Image
-                  source={{ uri: match.primary_image_url }}
-                  className="h-24 w-20 rounded-xl"
-                  resizeMode="cover"
+                <AppImage
+                  uri={match.primary_image_url}
+                  style={{ height: 96, width: 80, borderRadius: 12 }}
+                  variant="thumbnail"
+                  accessibilityLabel={`${match.name} image`}
                 />
               ) : (
                 <View className="h-24 w-20 items-center justify-center rounded-xl border border-hud-line/70 bg-raised-surface/60">
@@ -435,10 +438,11 @@ export default function ScanResultsScreen() {
                   <Card key={item.id} className="w-56 gap-3">
                     <View className="flex-row items-start gap-3">
                       {item.primary_image_url ? (
-                        <Image
-                          source={{ uri: item.primary_image_url }}
-                          className="h-16 w-14 rounded-lg"
-                          resizeMode="cover"
+                        <AppImage
+                          uri={item.primary_image_url}
+                          style={{ height: 64, width: 56, borderRadius: 8 }}
+                          variant="thumbnail"
+                          accessibilityLabel={`${item.name} thumbnail`}
                         />
                       ) : (
                         <View className="h-16 w-14 items-center justify-center rounded-lg border border-hud-line/70 bg-raised-surface/60">
@@ -462,7 +466,9 @@ export default function ScanResultsScreen() {
                         onPress={() => handleAdd(item, "OWNED", "related")}
                         onLongPress={() => handleAdd(item, "WISHLIST", "related")}
                         className="h-9 w-9 items-center justify-center rounded-full border border-hud-line/70 bg-hud-surface"
+                        accessibilityRole="button"
                         accessibilityLabel="Add related figure"
+                        accessibilityHint="Double tap to add to collection. Long press to add to wishlist."
                       >
                         <MaterialIcons name="add" size={18} color="#38bdf8" />
                       </Pressable>

@@ -8,14 +8,24 @@ type ChipProps = {
   selected?: boolean;
   onPress?: () => void;
   icon?: ReactNode;
+  accessibilityLabel?: string;
 };
 
-export function Chip({ label, selected = false, onPress, icon }: ChipProps) {
+export function Chip({
+  label,
+  selected = false,
+  onPress,
+  icon,
+  accessibilityLabel,
+}: ChipProps) {
   const { accentBorderClass, accentSoftBgClass, accentTextClass } = useTheme();
 
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ selected }}
       className={cx(
         "flex-row items-center gap-2 rounded-full border px-3 py-1.5",
         selected ? accentSoftBgClass : "bg-raised-surface/60",
@@ -34,4 +44,3 @@ export function Chip({ label, selected = false, onPress, icon }: ChipProps) {
     </Pressable>
   );
 }
-
