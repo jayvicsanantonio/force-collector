@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +10,7 @@ import {
 import { MaterialIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import { AppImage } from "../../src/components/AppImage";
 import { ScreenHeader } from "../../src/components/ScreenHeader";
 import { Button } from "../../src/components/Button";
 import { Card } from "../../src/components/Card";
@@ -520,10 +520,10 @@ export default function EditFigureModal() {
                 {displayedPhotos.map((photo) => (
                   <View key={photo.id} className="relative">
                     {photo.uri ? (
-                      <Image
-                        source={{ uri: photo.uri }}
-                        className="h-20 w-20 rounded-xl"
-                        resizeMode="cover"
+                      <AppImage
+                        uri={photo.uri}
+                        style={{ height: 80, width: 80, borderRadius: 12 }}
+                        variant="thumbnail"
                         accessibilityLabel="Figure photo"
                       />
                     ) : (

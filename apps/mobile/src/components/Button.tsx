@@ -12,6 +12,7 @@ type ButtonProps = {
   disabled?: boolean;
   onPress?: () => void;
   icon?: ReactNode;
+  accessibilityLabel?: string;
 };
 
 export function Button({
@@ -21,6 +22,7 @@ export function Button({
   disabled = false,
   onPress,
   icon,
+  accessibilityLabel,
 }: ButtonProps) {
   const {
     accentBorderClass,
@@ -44,6 +46,9 @@ export function Button({
     <Pressable
       onPress={onPress}
       disabled={isDisabled}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? label}
+      accessibilityState={{ disabled: isDisabled }}
       className={cx(
         "flex-row items-center justify-center gap-2 rounded-xl px-4 py-3",
         "shadow-lg",

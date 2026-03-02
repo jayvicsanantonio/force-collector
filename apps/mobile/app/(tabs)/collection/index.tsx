@@ -1,5 +1,5 @@
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import {
   FlatList,
   Pressable,
@@ -61,6 +61,50 @@ function extractYear(input: string) {
 function getSearchableText(item: CachedFigure) {
   return [item.name, item.series].filter(Boolean).join(" ").toLowerCase();
 }
+
+type CollectionCardProps = {
+  item: CachedFigure;
+  cardWidth: number;
+  isOnline: boolean;
+  onOpen: (item: CachedFigure) => void;
+};
+
+const CollectionCard = memo(function CollectionCard({
+  item,
+  cardWidth,
+  isOnline,
+  onOpen,
+}: CollectionCardProps) {
+  return (
+    <Pressable
+      style={[styles.card, { width: cardWidth, height: CARD_HEIGHT }]}
+      onPress={() => onOpen(item)}
+      accessibilityRole="button"
+      accessibilityLabel={`Open details for ${item.name}`}
+      accessibilityHint="Opens the figure details screen."
+    >
+      <View>
+        <Text style={styles.cardTitle} numberOfLines={2}>
+          {item.name}
+        </Text>
+        <Text style={styles.cardMeta} numberOfLines={1}>
+          {item.series ?? "Unknown series"}
+        </Text>
+      </View>
+      <View style={styles.cardFooter}>
+        <View>
+          <Text style={styles.cardPrice}>
+            {item.lastPrice ? `$${item.lastPrice}` : "Value unknown"}
+          </Text>
+          {!isOnline && item.lastPrice !== null ? (
+            <Text style={styles.staleText}>Stale price</Text>
+          ) : null}
+        </View>
+        {item.syncPending ? <Text style={styles.pendingText}>Sync pending</Text> : null}
+      </View>
+    </Pressable>
+  );
+});
 
 export default function CollectionScreen() {
   const { isOnline, syncNow } = useOfflineStatus();
@@ -127,42 +171,24 @@ export default function CollectionScreen() {
     track("collection_grid_viewed");
   }, []);
 
+  const handleOpenItem = useCallback((item: CachedFigure) => {
+    track("collection_item_opened");
+    router.push({
+      pathname: "/collection/details",
+      params: { userFigureId: item.id, source: "collection" },
+    });
+  }, []);
+
   const renderItem = useCallback(
     ({ item }: { item: CachedFigure }) => (
-      <Pressable
-        style={[styles.card, { width: cardWidth, height: CARD_HEIGHT }]}
-        onPress={() => {
-          track("collection_item_opened");
-          router.push({
-            pathname: "/collection/details",
-            params: { userFigureId: item.id, source: "collection" },
-          });
-        }}
-      >
-        <View>
-          <Text style={styles.cardTitle} numberOfLines={2}>
-            {item.name}
-          </Text>
-          <Text style={styles.cardMeta} numberOfLines={1}>
-            {item.series ?? "Unknown series"}
-          </Text>
-        </View>
-        <View style={styles.cardFooter}>
-          <View>
-            <Text style={styles.cardPrice}>
-              {item.lastPrice ? `$${item.lastPrice}` : "Value unknown"}
-            </Text>
-            {!isOnline && item.lastPrice !== null ? (
-              <Text style={styles.staleText}>Stale price</Text>
-            ) : null}
-          </View>
-          {item.syncPending ? (
-            <Text style={styles.pendingText}>Sync pending</Text>
-          ) : null}
-        </View>
-      </Pressable>
+      <CollectionCard
+        item={item}
+        cardWidth={cardWidth}
+        isOnline={isOnline}
+        onOpen={handleOpenItem}
+      />
     ),
-    [cardWidth, isOnline]
+    [cardWidth, handleOpenItem, isOnline]
   );
 
   const getItemLayout = useCallback(
@@ -192,6 +218,8 @@ export default function CollectionScreen() {
           placeholderTextColor="#6c82a8"
           style={styles.searchInput}
           returnKeyType="search"
+          accessibilityLabel="Search collection"
+          accessibilityHint="Filter collection by name or series."
         />
         {isOnline ? (
           <Pressable
@@ -200,6 +228,8 @@ export default function CollectionScreen() {
               track("collection_sync_tapped");
               syncNow();
             }}
+            accessibilityRole="button"
+            accessibilityLabel="Sync collection"
           >
             <Text style={styles.syncButtonText}>Sync</Text>
           </Pressable>
@@ -219,6 +249,9 @@ export default function CollectionScreen() {
                 setActiveFilter(item);
                 track("collection_filter_applied");
               }}
+              accessibilityRole="button"
+              accessibilityLabel={`Filter ${item}`}
+              accessibilityState={{ selected: item === activeFilter }}
               style={
                 item === activeFilter
                   ? styles.filterChipActive
@@ -249,6 +282,9 @@ export default function CollectionScreen() {
                 setActiveSort(option.id);
                 track("collection_sort_changed");
               }}
+              accessibilityRole="button"
+              accessibilityLabel={`Sort by ${option.label}`}
+              accessibilityState={{ selected: option.id === activeSort }}
               style={
                 option.id === activeSort
                   ? styles.sortChipActive
@@ -288,6 +324,7 @@ export default function CollectionScreen() {
         maxToRenderPerBatch={12}
         windowSize={7}
         removeClippedSubviews
+        updateCellsBatchingPeriod={50}
         getItemLayout={getItemLayout}
         ListEmptyComponent={
           <Text style={styles.emptyText}>No cached collection items yet.</Text>
@@ -300,6 +337,8 @@ export default function CollectionScreen() {
           track("collection_add_figure_tapped");
           router.push("/add-figure");
         }}
+        accessibilityRole="button"
+        accessibilityLabel="Add figure"
       >
         <Text style={styles.fabText}>Add</Text>
       </Pressable>

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Image,
   Pressable,
   ScrollView,
   Share,
@@ -16,6 +15,7 @@ import { Badge } from "../../../src/components/Badge";
 import { Button } from "../../../src/components/Button";
 import { Card } from "../../../src/components/Card";
 import { StatCard } from "../../../src/components/StatCard";
+import { AppImage } from "../../../src/components/AppImage";
 import { useTheme } from "../../../src/theme/ThemeProvider";
 import { useOfflineStatus } from "../../../src/offline/OfflineProvider";
 import { applyServerUpdate } from "../../../src/offline/cache";
@@ -389,10 +389,13 @@ export default function FigureDetailsScreen() {
             }`}
           >
             {figure?.primary_image_url ? (
-              <Image
-                source={{ uri: figure.primary_image_url }}
-                className={isCompact ? "h-52 w-full" : "h-44 w-full"}
-                resizeMode="cover"
+              <AppImage
+                uri={figure.primary_image_url}
+                style={{
+                  height: isCompact ? 208 : 176,
+                  width: "100%",
+                }}
+                variant="full"
                 accessibilityLabel={`${figureName} image`}
               />
             ) : (
@@ -535,11 +538,11 @@ export default function FigureDetailsScreen() {
               {photoUrls.length > 0 ? (
                 <View className="flex-row flex-wrap gap-2">
                   {photoUrls.map((url) => (
-                    <Image
+                    <AppImage
                       key={url}
-                      source={{ uri: url }}
-                      className="h-16 w-16 rounded-xl"
-                      resizeMode="cover"
+                      uri={url}
+                      style={{ height: 64, width: 64, borderRadius: 12 }}
+                      variant="thumbnail"
                       accessibilityLabel="User photo"
                     />
                   ))}
