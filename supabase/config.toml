@@ -26,7 +26,7 @@ enabled = true
 [functions.health]
 verify_jwt = false
 [functions.api]
-verify_jwt = true
+verify_jwt = false
 [functions.price-check]
 verify_jwt = false
 [functions.alert-dispatch]

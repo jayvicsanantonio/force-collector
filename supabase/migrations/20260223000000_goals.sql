@@ -1,4 +1,10 @@
-create type if not exists public.goal_progress_rule as enum ('OWNED_COUNT');
+do $$
+begin
+  create type public.goal_progress_rule as enum ('OWNED_COUNT');
+exception
+  when duplicate_object then null;
+end
+$$;
 
 create table if not exists public.goals (
   id uuid primary key default gen_random_uuid(),

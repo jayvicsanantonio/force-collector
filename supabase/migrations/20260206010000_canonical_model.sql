@@ -5,34 +5,68 @@
 
 create extension if not exists "pgcrypto";
 
-create type if not exists public.allegiance_theme as enum ('LIGHT', 'DARK');
-create type if not exists public.user_figure_status_canon as enum (
-  'OWNED',
-  'WISHLIST',
-  'PREORDER',
-  'SOLD'
-);
-create type if not exists public.user_figure_condition as enum (
-  'MINT',
-  'OPENED',
-  'LOOSE',
-  'UNKNOWN'
-);
-create type if not exists public.figure_era as enum (
-  'PREQUEL',
-  'ORIGINAL',
-  'SEQUEL',
-  'TV',
-  'GAMING',
-  'OTHER'
-);
-create type if not exists public.retailer_kind as enum (
-  'EBAY',
-  'AMAZON',
-  'TARGET',
-  'WALMART',
-  'OTHER'
-);
+do $$
+begin
+  create type public.allegiance_theme as enum ('LIGHT', 'DARK');
+exception
+  when duplicate_object then null;
+end
+$$;
+
+do $$
+begin
+  create type public.user_figure_status_canon as enum (
+    'OWNED',
+    'WISHLIST',
+    'PREORDER',
+    'SOLD'
+  );
+exception
+  when duplicate_object then null;
+end
+$$;
+
+do $$
+begin
+  create type public.user_figure_condition as enum (
+    'MINT',
+    'OPENED',
+    'LOOSE',
+    'UNKNOWN'
+  );
+exception
+  when duplicate_object then null;
+end
+$$;
+
+do $$
+begin
+  create type public.figure_era as enum (
+    'PREQUEL',
+    'ORIGINAL',
+    'SEQUEL',
+    'TV',
+    'GAMING',
+    'OTHER'
+  );
+exception
+  when duplicate_object then null;
+end
+$$;
+
+do $$
+begin
+  create type public.retailer_kind as enum (
+    'EBAY',
+    'AMAZON',
+    'TARGET',
+    'WALMART',
+    'OTHER'
+  );
+exception
+  when duplicate_object then null;
+end
+$$;
 
 create table if not exists public.user_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -62,6 +96,27 @@ create table if not exists public.figures (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'user_figures'
+      and column_name = 'catalog_item_id'
+  ) and not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'user_figures'
+      and column_name = 'figure_id'
+  ) then
+    -- Legacy shape from 20260206000000_init.sql; replace with canonical table.
+    drop table public.user_figures cascade;
+  end if;
+end
+$$;
 
 create table if not exists public.user_figures (
   id uuid primary key default gen_random_uuid(),
@@ -139,7 +194,7 @@ create index if not exists figures_name_tsv_idx
   on public.figures using gin (to_tsvector('simple', name));
 
 comment on index public.figures_name_tsv_idx is
-  'Text search via to_tsvector(\'simple\', figures.name).';
+  'Text search via to_tsvector(''simple'', figures.name).';
 
 create index if not exists retailer_listings_figure_retailer_idx
   on public.retailer_listings(figure_id, retailer);

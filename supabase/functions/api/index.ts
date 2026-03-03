@@ -1170,7 +1170,7 @@ async function fetchWishlistCount(
   return count ?? 0;
 }
 
-async function fetchListings(
+async function fetchListingsByFigureIds(
   supabase: AuthedSupabase,
   figureIds: string[]
 ) {
@@ -2139,9 +2139,9 @@ serve(async (req) => {
       ),
     ];
 
-    let listings = [] as Awaited<ReturnType<typeof fetchListings>>;
+    let listings = [] as Awaited<ReturnType<typeof fetchListingsByFigureIds>>;
     try {
-      listings = await fetchListings(supabase, figureIds);
+      listings = await fetchListingsByFigureIds(supabase, figureIds);
     } catch (error) {
       return jsonResponse(
         { message: error instanceof Error ? error.message : "Failed to load pricing." },
@@ -2179,9 +2179,9 @@ serve(async (req) => {
           ),
         ];
 
-        let priorListings = [] as Awaited<ReturnType<typeof fetchListings>>;
+        let priorListings = [] as Awaited<ReturnType<typeof fetchListingsByFigureIds>>;
         try {
-          priorListings = await fetchListings(supabase, priorFigureIds);
+          priorListings = await fetchListingsByFigureIds(supabase, priorFigureIds);
         } catch {
           priorListings = [];
         }
@@ -2379,9 +2379,9 @@ serve(async (req) => {
       ),
     ];
 
-    let listings = [] as Awaited<ReturnType<typeof fetchListings>>;
+    let listings = [] as Awaited<ReturnType<typeof fetchListingsByFigureIds>>;
     try {
-      listings = await fetchListings(supabase, figureIds);
+      listings = await fetchListingsByFigureIds(supabase, figureIds);
     } catch (error) {
       return jsonResponse(
         { message: error instanceof Error ? error.message : "Failed to load pricing." },
