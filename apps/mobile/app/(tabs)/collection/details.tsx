@@ -54,7 +54,7 @@ function formatSpecLabel(key: string) {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function formatSpecValue(value: unknown) {
+function formatSpecValue(value: unknown): string {
   if (value === null || value === undefined) {
     return "—";
   }

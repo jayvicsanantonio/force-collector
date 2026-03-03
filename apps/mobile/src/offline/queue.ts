@@ -30,13 +30,44 @@ export async function listPendingMutations(): Promise<PendingMutation[]> {
     "SELECT id, type, entity_id, payload, created_at FROM pending_mutations ORDER BY created_at ASC"
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    type: row.type,
-    entityId: row.entity_id,
-    payload: JSON.parse(row.payload) as PendingMutation["payload"],
-    createdAt: row.created_at,
-  }));
+  return rows
+    .map((row) => {
+      const payload = JSON.parse(row.payload) as unknown;
+      if (row.type === "status_update") {
+        return {
+          id: row.id,
+          type: "status_update" as const,
+          entityId: row.entity_id,
+          payload:
+            payload as Extract<PendingMutation, { type: "status_update" }>["payload"],
+          createdAt: row.created_at,
+        };
+      }
+      if (row.type === "create_user_figure") {
+        return {
+          id: row.id,
+          type: "create_user_figure" as const,
+          entityId: row.entity_id,
+          payload: payload as Extract<
+            PendingMutation,
+            { type: "create_user_figure" }
+          >["payload"],
+          createdAt: row.created_at,
+        };
+      }
+      if (row.type === "details_update") {
+        return {
+          id: row.id,
+          type: "details_update" as const,
+          entityId: row.entity_id,
+          payload:
+            payload as Extract<PendingMutation, { type: "details_update" }>["payload"],
+          createdAt: row.created_at,
+        };
+      }
+      return null;
+    })
+    .filter((row): row is PendingMutation => row !== null);
 }
 
 export async function removeMutation(id: string) {

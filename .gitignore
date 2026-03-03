@@ -26,3 +26,11 @@ web-build/
 dist/
 build/
 coverage/
+
+# Local Supabase state
+supabase/.branches/
+supabase/.temp/
+
+# Per-package lockfiles (repo currently does not track lockfiles)
+apps/mobile/package-lock.json
+packages/shared/package-lock.json

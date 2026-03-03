@@ -11,7 +11,7 @@ config.resolver.nodeModulesPaths = [
   path.join(projectRoot, "node_modules"),
   path.join(workspaceRoot, "node_modules"),
 ];
-config.resolver.disableHierarchicalLookup = true;
+config.resolver.disableHierarchicalLookup = false;
 config.resolver.extraNodeModules = {
   "@force-collector/shared": path.join(workspaceRoot, "packages/shared"),
 };

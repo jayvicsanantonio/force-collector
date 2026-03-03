@@ -125,7 +125,8 @@ function getBestListingUrl(item: CachedFigure, preferred?: Retailer) {
   );
   const order: Retailer[] = preferred
     ? [preferred, "AMAZON", "TARGET", "WALMART", "EBAY"].filter(
-        (value, index, array) => array.indexOf(value) === index
+        (value, index, array): value is Retailer =>
+          array.indexOf(value) === index
       )
     : ["AMAZON", "TARGET", "WALMART", "EBAY"];
 

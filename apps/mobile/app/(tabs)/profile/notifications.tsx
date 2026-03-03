@@ -2,8 +2,11 @@ import { Alert, StyleSheet, Switch, Text, View } from "react-native";
 import PlaceholderScreen from "../../../src/PlaceholderScreen";
 import { track } from "../../../src/observability";
 import { useMe, useUpdateMe } from "../../../src/api/me";
-import * as Notifications from "expo-notifications";
-import { hasPushPermission, registerPushTokenIfNeeded } from "../../../src/notifications/push";
+import {
+  hasPushPermission,
+  registerPushTokenIfNeeded,
+  requestPushPermission,
+} from "../../../src/notifications/push";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../../src/auth/AuthProvider";
 
@@ -51,8 +54,7 @@ export default function NotificationsScreen() {
           {
             text: "Allow",
             onPress: async () => {
-              await Notifications.requestPermissionsAsync();
-              resolve(await hasPushPermission());
+              resolve(await requestPushPermission());
             },
           },
         ]

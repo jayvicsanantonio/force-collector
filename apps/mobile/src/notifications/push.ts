@@ -1,15 +1,20 @@
-import * as Notifications from "expo-notifications";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { registerPushToken } from "../api/push";
 import { captureError, track } from "../observability";
+import { getNotificationsModuleAsync } from "./runtime";
 
 const DEVICE_ID_KEY = "push_device_id";
 const LAST_TOKEN_KEY = "push_last_token";
 const LAST_USER_KEY = "push_last_user";
 
-function isPermissionGranted(permission: Notifications.NotificationPermissionsStatus) {
+type NotificationsModule = typeof import("expo-notifications");
+
+function isPermissionGranted(
+  permission: import("expo-notifications").NotificationPermissionsStatus,
+  Notifications: NotificationsModule
+) {
   return (
     permission.granted ||
     permission.ios?.status ===
@@ -19,7 +24,7 @@ function isPermissionGranted(permission: Notifications.NotificationPermissionsSt
   );
 }
 
-async function ensureAndroidChannel() {
+async function ensureAndroidChannel(Notifications: NotificationsModule) {
   if (Platform.OS !== "android") {
     return;
   }
@@ -39,7 +44,7 @@ async function getOrCreateDeviceId() {
   return generated;
 }
 
-async function getExpoPushToken() {
+async function getExpoPushToken(Notifications: NotificationsModule) {
   const projectId =
     Constants.easConfig?.projectId ??
     (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)
@@ -54,14 +59,19 @@ async function getExpoPushToken() {
 
 export async function registerPushTokenIfNeeded(userId: string) {
   try {
+    const Notifications = await getNotificationsModuleAsync();
+    if (!Notifications) {
+      return { status: "unsupported" as const };
+    }
+
     const permission = await Notifications.getPermissionsAsync();
-    if (!isPermissionGranted(permission)) {
+    if (!isPermissionGranted(permission, Notifications)) {
       return { status: "permission_denied" as const };
     }
 
-    await ensureAndroidChannel();
+    await ensureAndroidChannel(Notifications);
 
-    const expoPushToken = await getExpoPushToken();
+    const expoPushToken = await getExpoPushToken(Notifications);
     const deviceId = await getOrCreateDeviceId();
 
     const [lastToken, lastUser] = await Promise.all([
@@ -93,16 +103,38 @@ export async function registerPushTokenIfNeeded(userId: string) {
 }
 
 export function configureNotificationHandler() {
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
+  void (async () => {
+    const Notifications = await getNotificationsModuleAsync();
+    if (!Notifications) {
+      return;
+    }
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+  })();
 }
 
 export async function hasPushPermission() {
+  const Notifications = await getNotificationsModuleAsync();
+  if (!Notifications) {
+    return false;
+  }
   const permission = await Notifications.getPermissionsAsync();
-  return isPermissionGranted(permission);
+  return isPermissionGranted(permission, Notifications);
+}
+
+export async function requestPushPermission() {
+  const Notifications = await getNotificationsModuleAsync();
+  if (!Notifications) {
+    return false;
+  }
+  await Notifications.requestPermissionsAsync();
+  const permission = await Notifications.getPermissionsAsync();
+  return isPermissionGranted(permission, Notifications);
 }

@@ -11,22 +11,25 @@ import {
 import { listPendingMutations, removeMutation } from "./queue";
 import type { PendingMutation } from "./types";
 
+const FigureStatusSchema = z.enum(["OWNED", "WISHLIST", "PREORDER", "SOLD"]);
+const FigureConditionSchema = z.enum(["MINT", "OPENED", "LOOSE", "UNKNOWN"]);
+
 const UserFigureUpdateSchema = z.object({
   id: z.string(),
-  status: z.string(),
+  status: FigureStatusSchema,
   updated_at: z.string().datetime().optional(),
 });
 
 const UserFigureCreateSchema = z.object({
   id: z.string(),
   figure_id: z.string().optional().nullable(),
-  status: z.string().optional(),
+  status: FigureStatusSchema.optional(),
   updated_at: z.string().datetime().optional(),
 });
 
 const UserFigureDetailsSchema = z.object({
   id: z.string(),
-  condition: z.string().optional().nullable(),
+  condition: FigureConditionSchema.optional().nullable(),
   purchase_price: z.number().optional(),
   purchase_currency: z.string().optional().nullable(),
   purchase_date: z.string().optional().nullable(),

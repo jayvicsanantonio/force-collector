@@ -1,4 +1,10 @@
-import "dotenv/config";
+// Allow Expo config commands (e.g. `expo install --fix`) to run before deps are installed.
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  require("dotenv/config");
+} catch {
+  // no-op; env vars can still be provided by the shell/CI environment.
+}
 import type { ExpoConfig } from "expo/config";
 
 const config: ExpoConfig = {
@@ -11,9 +17,12 @@ const config: ExpoConfig = {
   userInterfaceStyle: "dark",
   plugins: [
     "expo-router",
+    "@sentry/react-native",
     "expo-notifications",
     "expo-camera",
     "expo-image-picker",
+    "expo-secure-store",
+    "expo-sqlite",
   ],
   extra: {
     API_BASE_URL: process.env.API_BASE_URL ?? "",

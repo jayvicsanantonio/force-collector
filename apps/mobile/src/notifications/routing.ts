@@ -1,6 +1,6 @@
 import type { NotificationResponse } from "expo-notifications";
-import * as Notifications from "expo-notifications";
 import { router } from "expo-router";
+import { getNotificationsModuleAsync } from "./runtime";
 
 export type NotificationPayload = {
   type?: string;
@@ -74,17 +74,27 @@ function handleResponse(response: NotificationResponse) {
 }
 
 export function registerNotificationRouting() {
-  const subscription = Notifications.addNotificationResponseReceivedListener(
-    handleResponse
-  );
+  let canceled = false;
+  let subscription: { remove: () => void } | null = null;
 
-  Notifications.getLastNotificationResponseAsync().then((response) => {
-    if (response) {
+  void (async () => {
+    const Notifications = await getNotificationsModuleAsync();
+    if (!Notifications || canceled) {
+      return;
+    }
+
+    subscription = Notifications.addNotificationResponseReceivedListener(
+      handleResponse
+    );
+
+    const response = await Notifications.getLastNotificationResponseAsync();
+    if (response && !canceled) {
       handleResponse(response);
     }
-  });
+  })();
 
   return () => {
-    subscription.remove();
+    canceled = true;
+    subscription?.remove();
   };
 }

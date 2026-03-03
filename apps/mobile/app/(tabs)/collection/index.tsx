@@ -192,7 +192,7 @@ export default function CollectionScreen() {
   );
 
   const getItemLayout = useCallback(
-    (_: CachedFigure[] | null | undefined, index: number) => {
+    (_: ArrayLike<CachedFigure> | null | undefined, index: number) => {
       const row = Math.floor(index / 2);
       const length = CARD_HEIGHT + ROW_GAP;
       return { length, offset: row * length, index };
