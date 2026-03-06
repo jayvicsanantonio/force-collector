@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { FigureSchema } from "@force-collector/shared";
+import {
+  FigureListResponseSchema,
+  FigureSchema,
+} from "@force-collector/shared";
 import { apiRequest } from "./client";
 import { env } from "../env";
 import { queryKeys } from "./queryKeys";
@@ -31,16 +34,33 @@ type LoreState = {
   error: string | null;
 };
 
+export function useFigureSearch(query: string) {
+  const trimmedQuery = query.trim();
+  return useQuery({
+    queryKey: queryKeys.catalog(trimmedQuery),
+    enabled: Boolean(env.API_BASE_URL && trimmedQuery),
+    queryFn: () =>
+      apiRequest({
+        path: `/v1/figures?query=${encodeURIComponent(trimmedQuery)}&limit=25`,
+        schema: FigureListResponseSchema,
+        auth: "required",
+      }),
+  });
+}
+
+export async function fetchFigureById(figureId: string) {
+  return apiRequest({
+    path: `/v1/figures/${figureId}`,
+    schema: FigureSchema,
+    auth: "required",
+  });
+}
+
 export function useFigure(figureId?: string | null) {
   return useQuery({
     queryKey: queryKeys.figure(figureId ?? "unknown"),
     enabled: Boolean(env.API_BASE_URL && figureId),
-    queryFn: () =>
-      apiRequest({
-        path: `/v1/figures/${figureId}`,
-        schema: FigureSchema,
-        auth: "required",
-      }),
+    queryFn: () => fetchFigureById(figureId as string),
   });
 }
 
