@@ -21,7 +21,11 @@ import { useOfflineStatus } from "../../../src/offline/OfflineProvider";
 import { useFigureByFigureId, useFigureById } from "../../../src/offline/hooks";
 import { track } from "../../../src/observability";
 import { cx } from "../../../src/utils/cx";
-import { useSavePriceAlert, useUserFigurePrice } from "../../../src/api/price";
+import {
+  usePriceAlerts,
+  useSavePriceAlert,
+  useUserFigurePrice,
+} from "../../../src/api/price";
 
 const RETAILER_LABELS: Record<Retailer, string> = {
   AMAZON: "Amazon",
@@ -50,9 +54,15 @@ function formatDateTime(value?: string | null) {
 function getLatestChecked(listings: RetailerListing[]) {
   if (!listings.length) return null;
   return listings.reduce<string | null>((latest, listing) => {
-    if (!latest) return listing.last_checked_at;
-    return Date.parse(listing.last_checked_at) > Date.parse(latest)
-      ? listing.last_checked_at
+    const checkedAt = listing.last_checked_at ?? null;
+    if (!checkedAt) {
+      return latest;
+    }
+    if (!latest) {
+      return checkedAt;
+    }
+    return Date.parse(checkedAt) > Date.parse(latest)
+      ? checkedAt
       : latest;
   }, null);
 }
@@ -80,6 +90,7 @@ export default function WishlistDetailsScreen() {
   const figureId = userFigure?.figureId ?? params.figureId ?? null;
 
   const priceQuery = useUserFigurePrice(userFigureId);
+  const priceAlertsQuery = usePriceAlerts(userFigureId);
   const saveAlert = useSavePriceAlert();
 
   const [alertId, setAlertId] = useState<string | null>(null);
@@ -111,6 +122,17 @@ export default function WishlistDetailsScreen() {
         : ""
     );
   }, [userFigure?.id]);
+
+  useEffect(() => {
+    const alert = priceAlertsQuery.data?.items?.[0];
+    if (!alert) {
+      return;
+    }
+    setAlertId(alert.id);
+    setAlertTargetPrice(alert.target_price.toFixed(2));
+    setAlertRetailers(alert.retailers.length ? alert.retailers : ["AMAZON", "TARGET"]);
+    setAlertNotifyRestock(alert.notify_on_restock);
+  }, [priceAlertsQuery.data?.items]);
 
   const listings = priceQuery.data?.listings ?? [];
   const history = priceQuery.data?.history ?? [];

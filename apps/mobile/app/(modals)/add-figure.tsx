@@ -25,7 +25,7 @@ const OPTIONS = [
     title: "Custom Entry",
     description: "Create a custom figure entry.",
     icon: "edit" as const,
-    route: "/search/manual",
+    route: "/search/manual?mode=custom",
   },
 ];
 
