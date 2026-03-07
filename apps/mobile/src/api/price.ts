@@ -1,10 +1,10 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   PriceAlertCreateRequestSchema,
+  PriceAlertListResponseSchema,
   PriceAlertSchema,
   PriceAlertUpdateRequestSchema,
   PriceResponseSchema,
-  type PriceAlert,
   type PriceAlertCreateRequest,
   type PriceAlertUpdateRequest,
 } from "@force-collector/shared";
@@ -61,9 +61,24 @@ async function updatePriceAlert(id: string, payload: PriceAlertUpdateRequest) {
   });
 }
 
+export function usePriceAlerts(userFigureId?: string | null) {
+  return useQuery({
+    queryKey: [...queryKeys.priceAlerts(), userFigureId ?? "unknown"],
+    enabled: Boolean(env.API_BASE_URL && userFigureId),
+    queryFn: () =>
+      apiRequest({
+        path: `/v1/price-alerts?user_figure_id=${encodeURIComponent(
+          userFigureId as string
+        )}`,
+        schema: PriceAlertListResponseSchema,
+        auth: "required",
+      }),
+  });
+}
+
 export function useSavePriceAlert() {
   return useMutation({
-    mutationFn: async ({ id, payload }: SavePriceAlertInput): Promise<PriceAlert> => {
+    mutationFn: async ({ id, payload }: SavePriceAlertInput) => {
       if (id) {
         return updatePriceAlert(id, payload as PriceAlertUpdateRequest);
       }

@@ -17,7 +17,7 @@ export function useScanLookup() {
         method: "POST",
         body: parsed.data,
         schema: ScanLookupResponseSchema,
-        auth: "optional",
+        auth: "required",
       });
     },
   });

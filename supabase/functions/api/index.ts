@@ -36,8 +36,11 @@ const FIGURE_LORE_FIELDS =
   "id,name,subtitle,edition,lore,lore_updated_at,lore_source";
 const USER_FIGURE_SELECT_FIELDS =
   "id,user_id,figure_id,custom_figure_payload,status,condition,purchase_price,purchase_currency,purchase_date,notes,photo_refs,created_at,updated_at";
+const PRICE_ALERT_SELECT_FIELDS =
+  "id,user_id,user_figure_id,target_price,currency,enabled,retailers,notify_on_restock,cooldown_hours";
 const USER_FIGURE_STATUSES = ["OWNED", "WISHLIST", "PREORDER", "SOLD"] as const;
 const USER_FIGURE_CONDITIONS = ["MINT", "OPENED", "LOOSE", "UNKNOWN"] as const;
+const RETAILER_KINDS = ["EBAY", "AMAZON", "TARGET", "WALMART", "OTHER"] as const;
 const GOAL_PROGRESS_RULES = ["OWNED_COUNT"] as const;
 const DATE_ONLY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 const ACHIEVEMENT_KEY_ORDER = [
@@ -728,6 +731,10 @@ function isUserFigureCondition(
   return typeof value === "string" && USER_FIGURE_CONDITIONS.includes(value as any);
 }
 
+function isRetailerKind(value: unknown): value is (typeof RETAILER_KINDS)[number] {
+  return typeof value === "string" && RETAILER_KINDS.includes(value as any);
+}
+
 function parseNumeric(value: unknown) {
   if (value === null || value === undefined) {
     return { ok: true, value: null as number | null };
@@ -742,6 +749,24 @@ function parseNumeric(value: unknown) {
     }
   }
   return { ok: false, value: null as number | null };
+}
+
+function normalizeFigure(row: Record<string, unknown> | null) {
+  if (!row) {
+    return row;
+  }
+
+  const normalized = { ...row } as Record<string, unknown>;
+  if (typeof normalized.release_year === "string") {
+    const parsed = Number(normalized.release_year);
+    if (Number.isInteger(parsed)) {
+      normalized.release_year = parsed;
+    }
+  }
+  if (normalized.specs === null) {
+    normalized.specs = {};
+  }
+  return normalized;
 }
 
 function normalizeUserFigure(row: Record<string, unknown> | null) {
@@ -776,6 +801,60 @@ function normalizeUserFigure(row: Record<string, unknown> | null) {
     );
   } else if (normalized.photo_refs === null) {
     delete normalized.photo_refs;
+  }
+  return normalized;
+}
+
+function normalizeRetailerListing(row: Record<string, unknown> | null) {
+  if (!row) {
+    return row;
+  }
+
+  const normalized = { ...row } as Record<string, unknown>;
+  if (typeof normalized.current_price === "string") {
+    const parsed = Number(normalized.current_price);
+    if (Number.isFinite(parsed)) {
+      normalized.current_price = parsed;
+    }
+  }
+  return normalized;
+}
+
+function normalizePriceHistoryPoint(row: Record<string, unknown> | null) {
+  if (!row) {
+    return row;
+  }
+
+  const normalized = { ...row } as Record<string, unknown>;
+  if (typeof normalized.price === "string") {
+    const parsed = Number(normalized.price);
+    if (Number.isFinite(parsed)) {
+      normalized.price = parsed;
+    }
+  }
+  return normalized;
+}
+
+function normalizePriceAlert(row: Record<string, unknown> | null) {
+  if (!row) {
+    return row;
+  }
+
+  const normalized = { ...row } as Record<string, unknown>;
+  if (typeof normalized.target_price === "string") {
+    const parsed = Number(normalized.target_price);
+    if (Number.isFinite(parsed)) {
+      normalized.target_price = parsed;
+    }
+  }
+  if (typeof normalized.cooldown_hours === "string") {
+    const parsed = Number(normalized.cooldown_hours);
+    if (Number.isInteger(parsed)) {
+      normalized.cooldown_hours = parsed;
+    }
+  }
+  if (!Array.isArray(normalized.retailers)) {
+    normalized.retailers = [];
   }
   return normalized;
 }
@@ -1212,6 +1291,54 @@ async function fetchPriceHistory(
   }[];
 }
 
+function buildListingSummary(
+  listings: Array<Record<string, unknown>>
+): {
+  last_price: number | null;
+  in_stock: boolean | null;
+  last_checked_at: string | null;
+} | null {
+  if (!listings.length) {
+    return null;
+  }
+
+  let lastCheckedAt: string | null = null;
+  let inStock: boolean | null = null;
+  let lastPrice: number | null = null;
+  let fallbackPrice: number | null = null;
+
+  for (const listing of listings) {
+    const checkedAt =
+      typeof listing.last_checked_at === "string" ? listing.last_checked_at : null;
+    const price = toNumber(listing.current_price);
+    const listingInStock =
+      typeof listing.in_stock === "boolean" ? listing.in_stock : null;
+
+    if (price !== null && fallbackPrice === null) {
+      fallbackPrice = price;
+    }
+
+    if (
+      checkedAt &&
+      (!lastCheckedAt || Date.parse(checkedAt) > Date.parse(lastCheckedAt))
+    ) {
+      lastCheckedAt = checkedAt;
+      inStock = listingInStock;
+      lastPrice = price;
+    }
+  }
+
+  if (lastPrice === null) {
+    lastPrice = fallbackPrice;
+  }
+
+  return {
+    last_price: lastPrice,
+    in_stock: inStock,
+    last_checked_at: lastCheckedAt,
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -1568,7 +1695,10 @@ serve(async (req) => {
       return jsonResponse({ message: error.message }, 500);
     }
 
-    return jsonResponse({ items: data ?? [], next_cursor: null });
+    return jsonResponse({
+      items: (data ?? []).map((row) => normalizeFigure(row as Record<string, unknown>)),
+      next_cursor: null,
+    });
   }
 
   if (path.startsWith("/v1/figures/") && req.method === "GET") {
@@ -1605,7 +1735,7 @@ serve(async (req) => {
       if (!data) {
         return jsonResponse({ message: "Figure not found." }, 404);
       }
-      return jsonResponse(data);
+      return jsonResponse(normalizeFigure(data as Record<string, unknown>));
     }
 
     const refreshParam = url.searchParams.get("refresh");
@@ -1698,7 +1828,7 @@ serve(async (req) => {
 
     const limitParam = Number(url.searchParams.get("limit") || 50);
     const limit = Number.isFinite(limitParam)
-      ? Math.min(Math.max(limitParam, 1), 100)
+      ? Math.min(Math.max(limitParam, 1), 500)
       : 50;
 
     const query = url.searchParams.get("query")?.trim();
@@ -1741,7 +1871,65 @@ serve(async (req) => {
     const items = (data ?? []).map((row) =>
       normalizeUserFigure(row as Record<string, unknown>)
     );
-    return jsonResponse({ items, next_cursor: null });
+
+    const figureIds = [
+      ...new Set(
+        items
+          .map((row) =>
+            typeof row?.figure_id === "string" ? (row.figure_id as string) : null
+          )
+          .filter(Boolean) as string[]
+      ),
+    ];
+
+    let figuresById = new Map<string, Record<string, unknown>>();
+    if (figureIds.length) {
+      const { data: figures, error: figuresError } = await supabase
+        .from("figures")
+        .select(FIGURE_SELECT_FIELDS)
+        .in("id", figureIds);
+      if (figuresError) {
+        return jsonResponse({ message: figuresError.message }, 500);
+      }
+      figuresById = new Map(
+        (figures ?? []).map((figure) => [
+          String(figure.id),
+          normalizeFigure(figure as Record<string, unknown>) as Record<string, unknown>,
+        ])
+      );
+    }
+
+    let listingsByFigureId = new Map<string, Array<Record<string, unknown>>>();
+    if (figureIds.length) {
+      const { data: listings, error: listingsError } = await supabase
+        .from("retailer_listings")
+        .select("figure_id,current_price,in_stock,last_checked_at")
+        .in("figure_id", figureIds);
+      if (listingsError) {
+        return jsonResponse({ message: listingsError.message }, 500);
+      }
+      for (const listing of listings ?? []) {
+        const figureId = String(listing.figure_id);
+        const bucket = listingsByFigureId.get(figureId) ?? [];
+        bucket.push(listing as Record<string, unknown>);
+        listingsByFigureId.set(figureId, bucket);
+      }
+    }
+
+    return jsonResponse({
+      items: items.map((item) => {
+        const figureId =
+          typeof item?.figure_id === "string" ? (item.figure_id as string) : null;
+        return {
+          ...item,
+          figure: figureId ? figuresById.get(figureId) ?? null : null,
+          listing_summary: figureId
+            ? buildListingSummary(listingsByFigureId.get(figureId) ?? [])
+            : null,
+        };
+      }),
+      next_cursor: null,
+    });
   }
 
   if (path === "/v1/user-figures" && req.method === "POST") {
@@ -2085,6 +2273,323 @@ serve(async (req) => {
       .from("user_figures")
       .delete()
       .eq("id", userFigureId)
+      .eq("user_id", user.id);
+    if (error) {
+      return jsonResponse({ message: error.message }, 500);
+    }
+
+    return jsonResponse({ success: true });
+  }
+
+  if (path.startsWith("/v1/user-figures/") && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    const segments = path.split("/").filter(Boolean);
+    const userFigureId = segments[2];
+    const subresource = segments[3];
+    if (subresource !== "price") {
+      return jsonResponse({ message: "Not found." }, 404);
+    }
+    if (!userFigureId) {
+      return jsonResponse({ message: "User figure id is required." }, 400);
+    }
+
+    const { data: userFigure, error: userFigureError } = await supabase
+      .from("user_figures")
+      .select("id,figure_id")
+      .eq("id", userFigureId)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (userFigureError) {
+      return jsonResponse({ message: userFigureError.message }, 500);
+    }
+    if (!userFigure) {
+      return jsonResponse({ message: "User figure not found." }, 404);
+    }
+    if (!userFigure.figure_id) {
+      return jsonResponse({ listings: [], history: [] });
+    }
+
+    const { data: listings, error: listingsError } = await supabase
+      .from("retailer_listings")
+      .select("*")
+      .eq("figure_id", userFigure.figure_id)
+      .order("current_price", { ascending: true, nullsFirst: false });
+    if (listingsError) {
+      return jsonResponse({ message: listingsError.message }, 500);
+    }
+
+    const listingIds = (listings ?? []).map((listing) => String(listing.id));
+    let history: Array<Record<string, unknown>> = [];
+    if (listingIds.length) {
+      const { data: historyRows, error: historyError } = await supabase
+        .from("price_history_points")
+        .select("id,retailer_listing_id,price,currency,in_stock,captured_at")
+        .in("retailer_listing_id", listingIds)
+        .order("captured_at", { ascending: true });
+      if (historyError) {
+        return jsonResponse({ message: historyError.message }, 500);
+      }
+      history = (historyRows ?? []).map((row) =>
+        normalizePriceHistoryPoint(row as Record<string, unknown>) as Record<string, unknown>
+      );
+    }
+
+    return jsonResponse({
+      listings: (listings ?? []).map((row) =>
+        normalizeRetailerListing(row as Record<string, unknown>)
+      ),
+      history,
+    });
+  }
+
+  if (path === "/v1/price-alerts" && req.method === "GET") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    let query = supabase
+      .from("price_alerts")
+      .select(PRICE_ALERT_SELECT_FIELDS)
+      .eq("user_id", user.id)
+      .order("id", { ascending: true });
+
+    const userFigureId = url.searchParams.get("user_figure_id");
+    if (userFigureId) {
+      query = query.eq("user_figure_id", userFigureId);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      return jsonResponse({ message: error.message }, 500);
+    }
+
+    return jsonResponse({
+      items: (data ?? []).map((row) =>
+        normalizePriceAlert(row as Record<string, unknown>)
+      ),
+    });
+  }
+
+  if (path === "/v1/price-alerts" && req.method === "POST") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    let payload: Record<string, unknown> | null = null;
+    try {
+      payload = await req.json();
+    } catch {
+      return jsonResponse({ message: "Invalid JSON body." }, 400);
+    }
+    if (!payload || Array.isArray(payload)) {
+      return jsonResponse({ message: "Invalid JSON body." }, 400);
+    }
+
+    const targetPrice = parseNumeric(payload.target_price);
+    if (!targetPrice.ok || targetPrice.value === null || targetPrice.value <= 0) {
+      return jsonResponse({ message: "Invalid target_price." }, 400);
+    }
+    if (typeof payload.user_figure_id !== "string") {
+      return jsonResponse({ message: "user_figure_id is required." }, 400);
+    }
+    if (typeof payload.currency !== "string" || !payload.currency.trim()) {
+      return jsonResponse({ message: "currency is required." }, 400);
+    }
+
+    const { data: userFigure, error: userFigureError } = await supabase
+      .from("user_figures")
+      .select("id")
+      .eq("id", payload.user_figure_id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (userFigureError) {
+      return jsonResponse({ message: userFigureError.message }, 500);
+    }
+    if (!userFigure) {
+      return jsonResponse({ message: "User figure not found." }, 404);
+    }
+
+    const retailers = Array.isArray(payload.retailers)
+      ? payload.retailers.filter((value) => isRetailerKind(value))
+      : [];
+
+    const record = {
+      user_id: user.id,
+      user_figure_id: payload.user_figure_id,
+      target_price: targetPrice.value,
+      currency: payload.currency.trim().toUpperCase(),
+      enabled: payload.enabled !== false,
+      retailers,
+      notify_on_restock: payload.notify_on_restock !== false,
+      cooldown_hours:
+        typeof payload.cooldown_hours === "number" && payload.cooldown_hours > 0
+          ? Math.trunc(payload.cooldown_hours)
+          : 24,
+    };
+
+    const { data, error } = await supabase
+      .from("price_alerts")
+      .insert(record)
+      .select(PRICE_ALERT_SELECT_FIELDS)
+      .maybeSingle();
+    if (error) {
+      return jsonResponse({ message: error.message }, 500);
+    }
+
+    return jsonResponse(normalizePriceAlert(data as Record<string, unknown>));
+  }
+
+  if (path.startsWith("/v1/price-alerts/") && req.method === "PATCH") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    const segments = path.split("/").filter(Boolean);
+    const alertId = segments[2];
+    if (!alertId) {
+      return jsonResponse({ message: "Price alert id is required." }, 400);
+    }
+
+    let payload: Record<string, unknown> | null = null;
+    try {
+      payload = await req.json();
+    } catch {
+      return jsonResponse({ message: "Invalid JSON body." }, 400);
+    }
+    if (!payload || Array.isArray(payload)) {
+      return jsonResponse({ message: "Invalid JSON body." }, 400);
+    }
+
+    const updates: Record<string, unknown> = {};
+    if ("target_price" in payload) {
+      const targetPrice = parseNumeric(payload.target_price);
+      if (!targetPrice.ok || targetPrice.value === null || targetPrice.value <= 0) {
+        return jsonResponse({ message: "Invalid target_price." }, 400);
+      }
+      updates.target_price = targetPrice.value;
+    }
+    if ("currency" in payload) {
+      if (typeof payload.currency !== "string" || !payload.currency.trim()) {
+        return jsonResponse({ message: "Invalid currency." }, 400);
+      }
+      updates.currency = payload.currency.trim().toUpperCase();
+    }
+    if ("enabled" in payload) {
+      if (typeof payload.enabled !== "boolean") {
+        return jsonResponse({ message: "Invalid enabled." }, 400);
+      }
+      updates.enabled = payload.enabled;
+    }
+    if ("notify_on_restock" in payload) {
+      if (typeof payload.notify_on_restock !== "boolean") {
+        return jsonResponse({ message: "Invalid notify_on_restock." }, 400);
+      }
+      updates.notify_on_restock = payload.notify_on_restock;
+    }
+    if ("cooldown_hours" in payload) {
+      if (
+        typeof payload.cooldown_hours !== "number" ||
+        !Number.isFinite(payload.cooldown_hours) ||
+        payload.cooldown_hours <= 0
+      ) {
+        return jsonResponse({ message: "Invalid cooldown_hours." }, 400);
+      }
+      updates.cooldown_hours = Math.trunc(payload.cooldown_hours);
+    }
+    if ("retailers" in payload) {
+      if (
+        !Array.isArray(payload.retailers) ||
+        payload.retailers.some((value) => !isRetailerKind(value))
+      ) {
+        return jsonResponse({ message: "Invalid retailers." }, 400);
+      }
+      updates.retailers = payload.retailers;
+    }
+
+    if (!Object.keys(updates).length) {
+      return jsonResponse({ message: "No valid fields to update." }, 400);
+    }
+
+    const { data, error } = await supabase
+      .from("price_alerts")
+      .update(updates)
+      .eq("id", alertId)
+      .eq("user_id", user.id)
+      .select(PRICE_ALERT_SELECT_FIELDS)
+      .maybeSingle();
+    if (error) {
+      return jsonResponse({ message: error.message }, 500);
+    }
+    if (!data) {
+      return jsonResponse({ message: "Price alert not found." }, 404);
+    }
+
+    return jsonResponse(normalizePriceAlert(data as Record<string, unknown>));
+  }
+
+  if (path.startsWith("/v1/price-alerts/") && req.method === "DELETE") {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const supabase = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(supabase);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
+    }
+
+    const segments = path.split("/").filter(Boolean);
+    const alertId = segments[2];
+    if (!alertId) {
+      return jsonResponse({ message: "Price alert id is required." }, 400);
+    }
+
+    const { error } = await supabase
+      .from("price_alerts")
+      .delete()
+      .eq("id", alertId)
       .eq("user_id", user.id);
     if (error) {
       return jsonResponse({ message: error.message }, 500);
@@ -2548,11 +3053,19 @@ serve(async (req) => {
 
   if (path === "/v1/scan/lookup" && req.method === "POST") {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
     const supabaseKey =
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
       Deno.env.get("SUPABASE_ANON_KEY");
-    if (!supabaseUrl || !supabaseKey) {
+    if (!supabaseUrl || !supabaseAnonKey || !supabaseKey) {
       return jsonResponse({ message: "Supabase env not configured." }, 500);
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const authClient = createAuthedClient(supabaseUrl, supabaseAnonKey, authHeader);
+    const { user, error: authError } = await requireUser(authClient);
+    if (authError || !user) {
+      return jsonResponse({ message: "Unauthorized." }, 401);
     }
 
     let payload: { barcode?: string; symbology?: string; locale?: string } | null = null;

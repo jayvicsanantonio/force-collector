@@ -29,7 +29,6 @@ export async function getDatabase() {
     dbPromise = SQLite.openDatabaseAsync(resolveDbName());
     const db = await dbPromise;
     await migrate(db);
-    await seedIfEmpty(db);
   }
 
   return dbPromise;
@@ -105,88 +104,5 @@ async function migrate(db: SQLite.SQLiteDatabase) {
     await db.execAsync("ALTER TABLE figures ADD COLUMN photo_refs TEXT;");
   } catch {
     // Column already exists.
-  }
-}
-
-async function seedIfEmpty(db: SQLite.SQLiteDatabase) {
-  const row = await db.getFirstAsync<{ count: number }>(
-    "SELECT COUNT(*) as count FROM figures"
-  );
-  if (row && row.count > 0) {
-    return;
-  }
-
-  const now = new Date().toISOString();
-  await db.execAsync("BEGIN TRANSACTION;");
-  try {
-    await db.runAsync(
-      "INSERT INTO figures (id, name, series, status, last_price, in_stock, updated_at, sync_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        "fc-seed-1",
-        "Ahsoka Tano",
-        "The Clone Wars",
-        "OWNED",
-        34.99,
-        1,
-        now,
-        0,
-      ]
-    );
-    await db.runAsync(
-      "INSERT INTO figures (id, name, series, status, last_price, in_stock, updated_at, sync_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        "fc-seed-2",
-        "Darth Vader",
-        "Original Trilogy",
-        "OWNED",
-        29.99,
-        1,
-        now,
-        0,
-      ]
-    );
-    await db.runAsync(
-      "INSERT INTO figures (id, name, series, status, last_price, in_stock, updated_at, sync_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        "fc-seed-3",
-        "The Mandalorian",
-        "The Mandalorian",
-        "OWNED",
-        32.5,
-        0,
-        now,
-        0,
-      ]
-    );
-    await db.runAsync(
-      "INSERT INTO figures (id, name, series, status, last_price, in_stock, updated_at, sync_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        "fc-seed-4",
-        "Bo-Katan Kryze",
-        "The Mandalorian",
-        "WISHLIST",
-        27.0,
-        1,
-        now,
-        0,
-      ]
-    );
-    await db.runAsync(
-      "INSERT INTO figures (id, name, series, status, last_price, in_stock, updated_at, sync_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-      [
-        "fc-seed-5",
-        "Captain Rex",
-        "The Clone Wars",
-        "WISHLIST",
-        36.0,
-        0,
-        now,
-        0,
-      ]
-    );
-    await db.execAsync("COMMIT;");
-  } catch (error) {
-    await db.execAsync("ROLLBACK;");
-    throw error;
   }
 }

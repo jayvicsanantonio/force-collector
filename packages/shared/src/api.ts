@@ -11,7 +11,14 @@ import {
   UserFigureSchema,
   UserProfileSchema,
   UserSchema,
-} from "./entities";
+} from "./entities.ts";
+
+export const ListingSummarySchema = z.object({
+  last_price: z.number().nullable().optional(),
+  in_stock: z.boolean().nullable().optional(),
+  last_checked_at: z.string().datetime().nullable().optional(),
+});
+export type ListingSummary = z.infer<typeof ListingSummarySchema>;
 
 export const ApiSuccessSchema = z.object({
   success: z.boolean(),
@@ -92,6 +99,25 @@ export const UserFigureListResponseSchema = z.object({
   next_cursor: z.string().nullable().optional(),
 });
 export type UserFigureListResponse = z.infer<typeof UserFigureListResponseSchema>;
+
+export const HydratedUserFigureSchema = UserFigureSchema.extend({
+  figure: FigureSchema.nullable().optional(),
+  listing_summary: ListingSummarySchema.nullable().optional(),
+});
+export type HydratedUserFigure = z.infer<typeof HydratedUserFigureSchema>;
+
+export const HydratedUserFigureListResponseSchema = z.object({
+  items: z.array(HydratedUserFigureSchema),
+  next_cursor: z.string().nullable().optional(),
+});
+export type HydratedUserFigureListResponse = z.infer<
+  typeof HydratedUserFigureListResponseSchema
+>;
+
+export const PriceAlertListResponseSchema = z.object({
+  items: z.array(PriceAlertSchema),
+});
+export type PriceAlertListResponse = z.infer<typeof PriceAlertListResponseSchema>;
 
 export const UserFigureCreateRequestSchema = UserFigureSchema.omit({
   id: true,

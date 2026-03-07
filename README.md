@@ -177,8 +177,6 @@ npm run web      # Start in browser
 
 ## Testing
 
-There are currently no committed unit/integration test suites or `npm test` script in `apps/mobile`.
-
 Current practical testing workflow:
 
 1. Type check:
@@ -191,15 +189,20 @@ Current practical testing workflow:
    cd apps/mobile
    npx expo-doctor
    ```
-3. Backend health smoke check:
+3. Contract checks:
+   ```bash
+   node --experimental-specifier-resolution=node --test tests/contracts/api-contracts.test.mjs
+   ```
+4. Backend health smoke check:
    ```bash
    supabase functions serve health --env-file .env
    curl http://127.0.0.1:54321/functions/v1/health
    ```
-4. Manual feature validation on at least one simulator/emulator and one real phone.
+5. Manual feature validation on at least one simulator/emulator and one real phone.
 
 For full, step-by-step QA instructions, use:
 - [`docs/mobile-run-test-guide.md`](docs/mobile-run-test-guide.md)
+- [`docs/mobile-data-flow.md`](docs/mobile-data-flow.md)
 
 ## Simulator, Emulator, and Physical Device
 

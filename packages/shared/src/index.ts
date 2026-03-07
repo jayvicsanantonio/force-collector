@@ -1,2 +1,2 @@
-export * from "./entities";
-export * from "./api";
+export * from "./entities.ts";
+export * from "./api.ts";

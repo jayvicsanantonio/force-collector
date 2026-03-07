@@ -214,6 +214,8 @@ type UpsertFigureInput = {
   syncPending?: boolean;
 };
 
+type ReplaceFigureInput = Omit<UpsertFigureInput, "syncPending">;
+
 export async function upsertFigureRecord({
   id,
   figureId = null,
@@ -258,6 +260,65 @@ export async function upsertFigureRecord({
   const updated = await getFigureById(id);
   notifyFigureChanges();
   return updated;
+}
+
+export async function replaceHydratedFigures(records: ReplaceFigureInput[]) {
+  const db = await getDatabase();
+  const pendingRows = await db.getAllAsync<{ id: string }>(
+    "SELECT id FROM figures WHERE sync_pending = 1"
+  );
+  const pendingIds = new Set(pendingRows.map((row) => row.id));
+  const persistedIds = records
+    .map((record) => record.id)
+    .filter((id) => !pendingIds.has(id));
+
+  await db.execAsync("BEGIN TRANSACTION;");
+  try {
+    if (persistedIds.length) {
+      const placeholders = persistedIds.map(() => "?").join(", ");
+      await db.runAsync(
+        `DELETE FROM figures WHERE sync_pending = 0 AND id NOT IN (${placeholders})`,
+        persistedIds
+      );
+    } else {
+      await db.runAsync("DELETE FROM figures WHERE sync_pending = 0");
+    }
+
+    for (const record of records) {
+      if (pendingIds.has(record.id)) {
+        continue;
+      }
+      const resolvedPhotoRefs =
+        record.photoRefs && Array.isArray(record.photoRefs)
+          ? JSON.stringify(record.photoRefs)
+          : null;
+      await db.runAsync(
+        "INSERT OR REPLACE INTO figures (id, figure_id, name, series, status, last_price, in_stock, condition, purchase_price, purchase_currency, purchase_date, notes, photo_refs, updated_at, sync_pending) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+        [
+          record.id,
+          record.figureId ?? null,
+          record.name,
+          record.series,
+          record.status,
+          record.lastPrice ?? null,
+          record.inStock === null ? null : record.inStock ? 1 : 0,
+          record.condition ?? null,
+          record.purchasePrice ?? null,
+          record.purchaseCurrency ?? null,
+          record.purchaseDate ?? null,
+          record.notes ?? null,
+          resolvedPhotoRefs,
+          record.updatedAt ?? new Date().toISOString(),
+        ]
+      );
+    }
+    await db.execAsync("COMMIT;");
+  } catch (error) {
+    await db.execAsync("ROLLBACK;");
+    throw error;
+  }
+
+  notifyFigureChanges();
 }
 
 export async function replaceFigureIdentity(

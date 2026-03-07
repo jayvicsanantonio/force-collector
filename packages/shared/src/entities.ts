@@ -1,5 +1,15 @@
 import { z } from "zod";
 
+const FiniteNumberSchema = z.coerce.number().refine(Number.isFinite, {
+  message: "Expected a finite number.",
+});
+
+const IntegerSchema = z.coerce.number().int();
+
+const NullableFiniteNumberSchema = z.union([z.null(), FiniteNumberSchema]);
+
+const NullableIntegerSchema = z.union([z.null(), IntegerSchema]);
+
 export const AllegianceThemeSchema = z.enum(["LIGHT", "DARK"]);
 export type AllegianceTheme = z.infer<typeof AllegianceThemeSchema>;
 
@@ -31,29 +41,29 @@ export const UserProfileSchema = z.object({
 export type UserProfile = z.infer<typeof UserProfileSchema>;
 
 export const EraSchema = z.enum([
-  "Prequel",
-  "Original",
-  "Sequel",
+  "PREQUEL",
+  "ORIGINAL",
+  "SEQUEL",
   "TV",
-  "Gaming",
-  "Other",
+  "GAMING",
+  "OTHER",
 ]);
 export type Era = z.infer<typeof EraSchema>;
 
 export const FigureSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  subtitle: z.string().optional(),
-  edition: z.string().optional(),
-  series: z.string(),
-  wave: z.union([z.string(), z.number()]),
-  release_year: z.number().int(),
-  era: EraSchema,
-  faction: z.string(),
-  exclusivity: z.string(),
-  upc: z.string().optional(),
-  primary_image_url: z.string().url().optional(),
-  lore: z.string().optional(),
+  subtitle: z.string().nullable().optional(),
+  edition: z.string().nullable().optional(),
+  series: z.string().nullable().optional(),
+  wave: z.union([z.string(), z.number()]).nullable().optional(),
+  release_year: NullableIntegerSchema.optional(),
+  era: EraSchema.nullable().optional(),
+  faction: z.string().nullable().optional(),
+  exclusivity: z.string().nullable().optional(),
+  upc: z.string().nullable().optional(),
+  primary_image_url: z.string().url().nullable().optional(),
+  lore: z.string().nullable().optional(),
   specs: z.record(z.unknown()).optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
@@ -80,17 +90,18 @@ export const UserFigureSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   figure_id: z.string().uuid().nullable(),
-  custom_figure_payload: z.record(z.unknown()).optional(),
+  custom_figure_payload: z.record(z.unknown()).nullable().optional(),
   status: UserFigureStatusSchema,
   condition: UserFigureConditionSchema,
-  purchase_price: z.number().optional(),
-  purchase_currency: z.string().optional(),
+  purchase_price: NullableFiniteNumberSchema.optional(),
+  purchase_currency: z.string().nullable().optional(),
   purchase_date: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
     .optional(),
-  notes: z.string().optional(),
-  photo_refs: z.array(z.string()).optional(),
+  notes: z.string().nullable().optional(),
+  photo_refs: z.array(z.string()).nullable().optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
@@ -110,10 +121,10 @@ export const RetailerListingSchema = z.object({
   figure_id: z.string().uuid(),
   retailer: RetailerSchema,
   product_url: z.string().url(),
-  external_id: z.string().optional(),
-  last_checked_at: z.string().datetime(),
+  external_id: z.string().nullable().optional(),
+  last_checked_at: z.string().datetime().nullable().optional(),
   in_stock: z.boolean().nullable(),
-  current_price: z.number().nullable(),
+  current_price: NullableFiniteNumberSchema,
   currency: z.string(),
 });
 export type RetailerListing = z.infer<typeof RetailerListingSchema>;
@@ -121,7 +132,7 @@ export type RetailerListing = z.infer<typeof RetailerListingSchema>;
 export const PriceHistoryPointSchema = z.object({
   id: z.string().uuid(),
   retailer_listing_id: z.string().uuid(),
-  price: z.number(),
+  price: FiniteNumberSchema,
   currency: z.string(),
   in_stock: z.boolean().nullable(),
   captured_at: z.string().datetime(),
@@ -132,12 +143,12 @@ export const PriceAlertSchema = z.object({
   id: z.string().uuid(),
   user_id: z.string().uuid(),
   user_figure_id: z.string().uuid(),
-  target_price: z.number(),
+  target_price: FiniteNumberSchema,
   currency: z.string(),
   enabled: z.boolean(),
   retailers: z.array(RetailerSchema),
   notify_on_restock: z.boolean(),
-  cooldown_hours: z.number().int(),
+  cooldown_hours: IntegerSchema,
 });
 export type PriceAlert = z.infer<typeof PriceAlertSchema>;
 
